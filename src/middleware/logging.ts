@@ -24,10 +24,10 @@ function formatLogMessage(context: LogContext): string {
 		statusCode >= 200 && statusCode < 300
 			? "✅"
 			: statusCode >= 400 && statusCode < 500
-			  ? "⚠️"
-			  : statusCode >= 500
-			    ? "❌"
-			    : "ℹ️";
+				? "⚠️"
+				: statusCode >= 500
+					? "❌"
+					: "ℹ️";
 	return `[${timestamp}] ${statusEmoji} ${statusCode} ${method} ${url} (${duration}ms)`;
 }
 

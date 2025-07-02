@@ -66,7 +66,7 @@ export const postCreateResponse = async (
 													? {
 															type: "text" as ChatCompletionInputMessageChunkType,
 															text: content.text,
-													  }
+														}
 													: undefined;
 											case "refusal":
 												return undefined;
@@ -106,22 +106,22 @@ export const postCreateResponse = async (
 									name: req.body.text.format.name,
 									schema: req.body.text.format.schema,
 									strict: req.body.text.format.strict,
-							  }
+								}
 							: undefined,
-			  }
+				}
 			: undefined,
 		temperature: req.body.temperature,
 		tool_choice:
 			typeof req.body.tool_choice === "string"
 				? req.body.tool_choice
 				: req.body.tool_choice
-				  ? {
+					? {
 							type: "function",
 							function: {
 								name: req.body.tool_choice.name,
 							},
-				    }
-				  : undefined,
+						}
+					: undefined,
 		tools: req.body.tools
 			? req.body.tools.map((tool) => ({
 					type: tool.type,
@@ -131,7 +131,7 @@ export const postCreateResponse = async (
 						description: tool.description,
 						strict: tool.strict,
 					},
-			  }))
+				}))
 			: undefined,
 		top_p: req.body.top_p,
 	};
@@ -403,17 +403,17 @@ export const postCreateResponse = async (
 							},
 						],
 					},
-			  ]
+				]
 			: chatCompletionResponse.choices[0].message.tool_calls
-			  ? chatCompletionResponse.choices[0].message.tool_calls.map((toolCall) => ({
+				? chatCompletionResponse.choices[0].message.tool_calls.map((toolCall) => ({
 						type: "function_call",
 						id: generateUniqueId("fc"),
 						call_id: toolCall.id,
 						name: toolCall.function.name,
 						arguments: toolCall.function.arguments,
 						status: "completed",
-			    }))
-			  : [];
+					}))
+				: [];
 
 		res.json(responseObject);
 	} catch (error) {
