@@ -42,22 +42,6 @@ pnpm run example function
 pnpm run example function_streaming
 ```
 
-## 📁 Project Structure
-
-```
-responses.js/
-├── demo/             # Chat UI for demo
-├── examples/         # Example scripts using openai-node client
-├── src/
-│   ├── index.ts           
-│   ├── server.ts     # Express app configuration (e.g. route definition)
-│   ├── routes/       # Routes implementation
-│   ├── middleware/   # Middlewares (validation + logging)
-│   └── schemas/      # Zod validation schemas
-├── scripts/          # Utility scripts
-├── package.json      # Package configuration
-```
-
 ### Run demo UI
 
 The [./demo](./demo) folder contains simple UI to play with the API. It is adapted from [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app).
@@ -81,6 +65,22 @@ Finally, run the UI with
 
 ```bash
 pnpm demo:run
+```
+
+## 📁 Project Structure
+
+```
+responses.js/
+├── demo/             # Chat UI for demo
+├── examples/         # Example scripts using openai-node client
+├── src/
+│   ├── index.ts
+│   ├── server.ts     # Express app configuration (e.g. route definition)
+│   ├── routes/       # Routes implementation
+│   ├── middleware/   # Middlewares (validation + logging)
+│   └── schemas/      # Zod validation schemas
+├── scripts/          # Utility scripts
+├── package.json      # Package configuration
 ```
 
 ## Roadmap
