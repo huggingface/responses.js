@@ -33,7 +33,9 @@
 		"prepublishOnly": "pnpm run build",
 		"prepare": "pnpm run build",
 		"start": "node dist/index.js",
-		"example": "node scripts/run-example.js"
+		"example": "node scripts/run-example.js",
+		"demo:run": "cd demo && npm run dev",
+		"demo:install": "cd demo && npm install"
 	},
 	"files": [
 		"src",
