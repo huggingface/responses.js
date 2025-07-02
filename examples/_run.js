@@ -18,7 +18,7 @@ if (!exampleName) {
 	process.exit(1);
 }
 
-const examplePath = path.resolve(__dirname, "../examples", `${exampleName}.js`);
+const examplePath = path.resolve(__dirname, `${exampleName}.js`);
 if (!fs.existsSync(examplePath)) {
 	console.error(`Example script not found: ${examplePath}`);
 	process.exit(1);

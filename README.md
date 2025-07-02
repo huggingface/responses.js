@@ -46,6 +46,7 @@ pnpm run example function_streaming
 
 ```
 responses.js/
+├── demo/             # Chat UI for demo
 ├── examples/         # Example scripts using openai-node client
 ├── src/
 │   ├── index.ts           
