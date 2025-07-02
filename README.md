@@ -114,7 +114,7 @@ responses.js/
 
 ## 🛣️ Roadmap
 
-> **Note**: This project is in active development. The roadmap below represents our current priorities and may evolve.
+> **Note**: This project is in active development. The roadmap below represents our current priorities and may evolve. Do not take anything for granted.
 
 ### ✅ Completed
 
@@ -129,15 +129,12 @@ responses.js/
 ### 📋 For later
 
 - [ ] Multi-turn conversation fixes for text messages + tool calls
-- [ ] Usage statistics implementation
+- [ ] Correctly return "usage" field
 - [ ] Conversation state management
 - [ ] Tools execution (web search, file search, image generation, MCP, code interpreter)
 - [ ] Background mode support
 - [ ] Additional API routes (GET, DELETE, CANCEL, LIST responses)
 - [ ] Reasoning capabilities
-- [ ] Enhanced error handling and validation
-- [ ] Performance optimizations
-- [ ] Comprehensive test suite
 
 ## 🤝 Contributing
 
