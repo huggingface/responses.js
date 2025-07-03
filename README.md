@@ -4,15 +4,15 @@ A lightweight Express.js server that implements OpenAI's Responses API, built on
 
 ## ✨ Features
 
-- **OpenAI Compatibility**: Partial implementation of OpenAI's Responses API
-- **Inference Providers**: Powered by Hugging Face Inference Providers (chat completion API)
+- **ResponsesAPI**: Partial implementation of [OpenAI's Responses API](https://platform.openai.com/docs/api-reference/responses), on top of Chat Completion API
+- **Inference Providers**: Powered by Hugging Face Inference Providers
 - **Streaming Support**: Support for streamed responses
 - **Structured Output**: Support for structured data responses (e.g. jsonschema)
 - **Function Calling**: Tool and function calling capabilities
 - **Multi-modal Input**: Text and image input support
 - **Demo UI**: Interactive web interface for testing
 
-Not implemented yet: remote function calling, MCP server, file upload, stateful API, etc.
+Not implemented: remote function calling, MCP server, file upload, stateful API, etc.
 
 ## 🚀 Quick Start
 
