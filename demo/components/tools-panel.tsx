@@ -23,28 +23,28 @@ export default function ContextPanel() {
 	return (
 		<div className="h-full p-8 w-full bg-[#f9f9f9] rounded-t-xl md:rounded-none border-l-1 border-stone-100">
 			<div className="flex flex-col overflow-y-scroll h-full">
-				<PanelConfig
+				{/* <PanelConfig
 					title="File Search"
 					tooltip="Allows to search a knowledge base (vector store)"
 					enabled={fileSearchEnabled}
 					setEnabled={setFileSearchEnabled}
 				>
 					<FileSearchSetup />
-				</PanelConfig>
-				<PanelConfig
+				</PanelConfig> */}
+				{/* <PanelConfig
 					title="Web Search"
 					tooltip="Allows to search the web"
 					enabled={webSearchEnabled}
 					setEnabled={setWebSearchEnabled}
 				>
 					<WebSearchConfig />
-				</PanelConfig>
-				<PanelConfig
+				</PanelConfig> */}
+				{/* <PanelConfig
 					title="Code Interpreter"
 					tooltip="Allows the assistant to run Python code"
 					enabled={codeInterpreterEnabled}
 					setEnabled={setCodeInterpreterEnabled}
-				/>
+				/> */}
 				<PanelConfig
 					title="Functions"
 					tooltip="Allows to use locally defined functions"
@@ -53,14 +53,14 @@ export default function ContextPanel() {
 				>
 					<FunctionsView />
 				</PanelConfig>
-				<PanelConfig
+				{/* <PanelConfig
 					title="MCP"
 					tooltip="Allows to call tools via remote MCP server"
 					enabled={mcpEnabled}
 					setEnabled={setMcpEnabled}
 				>
 					<McpConfig />
-				</PanelConfig>
+				</PanelConfig> */}
 			</div>
 		</div>
 	);
