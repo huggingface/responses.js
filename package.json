@@ -56,11 +56,11 @@
 	"author": "Hugging Face",
 	"license": "MIT",
 	"dependencies": {
-		"@huggingface/inference": "^4.3.0",
+		"@huggingface/inference": "^4.3.1",
 		"@huggingface/tasks": "^0.19.22",
 		"express": "^4.21.2",
 		"openai": "^5.8.2",
-		"zod": "^3.25.69"
+		"zod": "^3.25.71"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.30.1",
@@ -70,7 +70,7 @@
 		"eslint": "^9.30.1",
 		"eslint-config-prettier": "^10.1.5",
 		"eslint-plugin-prettier": "^5.5.1",
-		"prettier": "^3.1.0",
+		"prettier": "^3.6.2",
 		"tsup": "^8.5.0",
 		"tsx": "^4.20.3",
 		"typescript": "^5.8.3"
