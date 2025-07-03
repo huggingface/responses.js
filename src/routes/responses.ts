@@ -137,7 +137,6 @@ export const postCreateResponse = async (
 	};
 
 	const responseObject: Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls"> = {
-		// created_at must be a  timestamp in seconds, not milliseconds
 		created_at: Math.floor(new Date().getTime() / 1000),
 		error: null,
 		id: generateUniqueId("resp"),
