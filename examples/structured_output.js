@@ -15,7 +15,7 @@ const MathReasoning = z.object({
 });
 
 const response = await openai.responses.parse({
-	model: "nebius@Qwen/Qwen2.5-VL-72B-Instruct",
+	model: "novita@meta-llama/Meta-Llama-3-70B-Instruct",
 	input: [
 		{
 			role: "system",
