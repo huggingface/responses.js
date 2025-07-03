@@ -68,6 +68,10 @@ pnpm run example function_streaming
 
 Experience the API through our interactive web interface, adapted from the [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app).
 
+<video src="https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/responses.js/demo.webm" autoplay loop muted playsinline>
+  (Chat UI demo)
+</video>
+
 #### Setup
 
 1. Create a configuration file:
