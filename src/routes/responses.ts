@@ -158,7 +158,7 @@ export const postCreateResponse = async (
 	if (req.body.stream) {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Connection", "keep-alive");
-		let sequenceNumber = 1;
+		let sequenceNumber = 0;
 
 		// Emit events in sequence
 		const emitEvent = (event: ResponseStreamEvent) => {
