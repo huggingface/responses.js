@@ -22,8 +22,7 @@ const tools = [
 ];
 
 const response = await openai.responses.create({
-	model: "meta-llama/Llama-3.3-70B-Instruct",
-	provider: "cerebras",
+	model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
 	tools: tools,
 	input: "What is the weather like in Boston today?",
 	tool_choice: "auto",
