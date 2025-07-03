@@ -68,7 +68,7 @@ pnpm run example function_streaming
 
 Experience the API through our interactive web interface, adapted from the [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app).
 
-![Demo]([demo.gif](https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/responses.js/demo.webm))
+![Demo](https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/responses.js/demo.webm)
 
 #### Setup
 
