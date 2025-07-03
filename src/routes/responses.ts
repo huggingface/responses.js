@@ -137,7 +137,8 @@ export const postCreateResponse = async (
 	};
 
 	const responseObject: Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls"> = {
-		created_at: new Date().getTime(),
+		// created_at must be a  timestamp in seconds, not milliseconds
+		created_at: Math.floor(new Date().getTime() / 1000),
 		error: null,
 		id: generateUniqueId("resp"),
 		instructions: req.body.instructions,
@@ -158,7 +159,7 @@ export const postCreateResponse = async (
 	if (req.body.stream) {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Connection", "keep-alive");
-		let sequenceNumber = 0;
+		let sequenceNumber = 1;
 
 		// Emit events in sequence
 		const emitEvent = (event: ResponseStreamEvent) => {
@@ -229,10 +230,6 @@ export const postCreateResponse = async (
 
 					const contentPart = outputObject.content.at(-1);
 					if (!contentPart || contentPart.type !== "output_text") {
-						throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
-					}
-
-					if (contentPart.type !== "output_text") {
 						throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
 					}
 
@@ -371,15 +368,17 @@ export const postCreateResponse = async (
 			) {
 				message = streamError.message;
 			}
-
+			responseObject.status = "failed";  
+			responseObject.error = {                           
+				code: "server_error",                                   
+				message,                                      
+			  };
 			emitEvent({
-				type: "error",
-				code: null,
-				message,
-				param: null,
-				sequence_number: sequenceNumber++,
+			type: "response.failed",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
 			});
-		}
+	}
 		res.end();
 		return;
 	}
