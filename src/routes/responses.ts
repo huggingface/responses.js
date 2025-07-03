@@ -137,7 +137,7 @@ export const postCreateResponse = async (
 	};
 
 	const responseObject: Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls"> = {
-		created_at: new Date().getTime(),
+		created_at: Math.floor(new Date().getTime() / 1000),
 		error: null,
 		id: generateUniqueId("resp"),
 		instructions: req.body.instructions,
@@ -229,10 +229,6 @@ export const postCreateResponse = async (
 
 					const contentPart = outputObject.content.at(-1);
 					if (!contentPart || contentPart.type !== "output_text") {
-						throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
-					}
-
-					if (contentPart.type !== "output_text") {
 						throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
 					}
 
@@ -371,12 +367,14 @@ export const postCreateResponse = async (
 			) {
 				message = streamError.message;
 			}
-
-			emitEvent({
-				type: "error",
-				code: null,
+			responseObject.status = "failed";
+			responseObject.error = {
+				code: "server_error",
 				message,
-				param: null,
+			};
+			emitEvent({
+				type: "response.failed",
+				response: responseObject as Response,
 				sequence_number: sequenceNumber++,
 			});
 		}

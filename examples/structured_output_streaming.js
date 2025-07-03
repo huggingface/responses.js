@@ -11,8 +11,7 @@ const CalendarEvent = z.object({
 const openai = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: process.env.HF_TOKEN });
 const stream = openai.responses
 	.stream({
-		model: "Qwen/Qwen2.5-VL-72B-Instruct",
-		provider: "nebius",
+		model: "nebius@Qwen/Qwen2.5-VL-72B-Instruct",
 		instructions: "Extract the event information.",
 		input: "Alice and Bob are going to a science fair on Friday.",
 		text: {
