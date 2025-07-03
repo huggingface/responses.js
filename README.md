@@ -112,11 +112,9 @@ responses.js/
 └── README.md         # This file
 ```
 
-## 🛣️ Roadmap
+## 🛣️ Done / TODOs
 
 > **Note**: This project is in active development. The roadmap below represents our current priorities and may evolve. Do not take anything for granted.
-
-### ✅ Completed
 
 - [x] OpenAI types integration for consistent output
 - [x] Streaming mode support
@@ -125,9 +123,6 @@ responses.js/
 - [x] Repository migration to dedicated responses.js repo
 - [x] Basic development tooling setup
 - [x] Demo application with comprehensive instructions
-
-### 📋 For later
-
 - [ ] Multi-turn conversation fixes for text messages + tool calls
 - [ ] Correctly return "usage" field
 - [ ] Conversation state management
