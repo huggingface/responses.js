@@ -367,17 +367,17 @@ export const postCreateResponse = async (
 			) {
 				message = streamError.message;
 			}
-			responseObject.status = "failed";  
-			responseObject.error = {                           
-				code: "server_error",                                   
-				message,                                      
-			  };
+			responseObject.status = "failed";
+			responseObject.error = {
+				code: "server_error",
+				message,
+			};
 			emitEvent({
-			type: "response.failed",
-			response: responseObject as Response,
-			sequence_number: sequenceNumber++,
+				type: "response.failed",
+				response: responseObject as Response,
+				sequence_number: sequenceNumber++,
 			});
-	}
+		}
 		res.end();
 		return;
 	}
