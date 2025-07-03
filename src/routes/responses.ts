@@ -46,39 +46,58 @@ export const postCreateResponse = async (
 	if (Array.isArray(req.body.input)) {
 		messages.push(
 			...req.body.input
-				.map((item) => ({
-					role: item.role,
-					content:
-						typeof item.content === "string"
-							? item.content
-							: item.content
-									.map((content) => {
-										switch (content.type) {
-											case "input_image":
-												return {
-													type: "image_url" as ChatCompletionInputMessageChunkType,
-													image_url: {
-														url: content.image_url,
-													},
-												};
-											case "output_text":
-												return content.text
-													? {
-															type: "text" as ChatCompletionInputMessageChunkType,
-															text: content.text,
-														}
-													: undefined;
-											case "refusal":
-												return undefined;
-											case "input_text":
-												return {
-													type: "text" as ChatCompletionInputMessageChunkType,
-													text: content.text,
-												};
-										}
-									})
-									.filter((item) => item !== undefined),
-				}))
+				.map((item) => {
+					switch (item.type) {
+						case "function_call":
+							return {
+								// hacky but best fit for now
+								role: "assistant",
+								name: `function_call ${item.name} ${item.call_id}`,
+								content: item.arguments,
+							};
+						case "function_call_output":
+							return {
+								// hacky but best fit for now
+								role: "assistant",
+								name: `function_call_output ${item.call_id}`,
+								content: item.output,
+							};
+						case "message":
+							return {
+								role: item.role,
+								content:
+									typeof item.content === "string"
+										? item.content
+										: item.content
+												.map((content) => {
+													switch (content.type) {
+														case "input_image":
+															return {
+																type: "image_url" as ChatCompletionInputMessageChunkType,
+																image_url: {
+																	url: content.image_url,
+																},
+															};
+														case "output_text":
+															return content.text
+																? {
+																		type: "text" as ChatCompletionInputMessageChunkType,
+																		text: content.text,
+																	}
+																: undefined;
+														case "refusal":
+															return undefined;
+														case "input_text":
+															return {
+																type: "text" as ChatCompletionInputMessageChunkType,
+																text: content.text,
+															};
+													}
+												})
+												.filter((item) => item !== undefined),
+							};
+					}
+				})
 				.filter((message) => message.content?.length !== 0)
 		);
 	} else {

@@ -65,6 +65,21 @@ export const createResponseParamsSchema = z.object({
 						])
 					),
 				}),
+				z.object({
+					type: z.literal("function_call"),
+					id: z.string().optional(),
+					call_id: z.string(),
+					name: z.string(),
+					arguments: z.string(),
+					status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
+				}),
+				z.object({
+					call_id: z.string(),
+					output: z.string(),
+					type: z.literal("function_call_output"),
+					id: z.string().optional(),
+					status: z.enum(["in_progress", "completed", "incomplete"]),
+				}),
 				// z.object({
 				// 	id: z.string(),
 				// 	type: z.enum(["item_reference"]).default("item_reference"),
