@@ -16,5 +16,7 @@ const response = await openai.responses.create({
 	],
 });
 
-console.log(response);
-console.log(response.output);
+response.output.forEach((output, index) => {
+	console.log(`Output item #${index}`);
+	console.log(output);
+});

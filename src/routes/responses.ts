@@ -15,12 +15,13 @@ import type {
 	ResponseContentPartAddedEvent,
 	ResponseOutputMessage,
 	ResponseFunctionToolCall,
+	ResponseOutputItem,
 } from "openai/resources/responses/responses";
 import type {
 	ChatCompletionInputTool,
 	ChatCompletionStreamOutputUsage,
 } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
-import { connectMcpServers } from "../lib/connectMcpServers.js";
+import { connectMcpServer } from "../mcp.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -109,24 +110,65 @@ export const postCreateResponse = async (
 		messages.push({ role: "user", content: req.body.input });
 	}
 
-	const mcpServers: McpServerParams[] = req.body.tools?.filter((tool) => tool.type === "mcp") as McpServerParams[];
-	const tools: ChatCompletionInputTool[] | undefined = req.body.tools
-		?.filter((tool) => tool.type !== "mcp")
-		.map((tool) => ({
-			type: tool.type,
-			function: {
-				name: tool.name,
-				parameters: tool.parameters,
-				description: tool.description,
-				strict: tool.strict,
-			},
-		}));
-
-	const mcpClients = await connectMcpServers(mcpServers);
-	Object.values(mcpClients).forEach((client) => Object.values(client.tools).forEach((tool) => tools?.push(tool)));
-
-	if (tools) {
-		console.log("Tools:", tools);
+	const output: ResponseOutputItem[] = [];
+	let tools: ChatCompletionInputTool[] | undefined = [];
+	if (req.body.tools) {
+		await Promise.all(
+			req.body.tools.map(async (tool) => {
+				switch (tool.type) {
+					case "function":
+						tools?.push({
+							type: tool.type,
+							function: {
+								name: tool.name,
+								parameters: tool.parameters,
+								description: tool.description,
+								strict: tool.strict,
+							},
+						});
+						break;
+					case "mcp":
+						try {
+							const mcp = await connectMcpServer(tool);
+							const mcpTools = await mcp.listTools();
+							output.push({
+								id: generateUniqueId("mcp"),
+								type: "mcp_list_tools",
+								server_label: tool.server_label,
+								tools: mcpTools.tools.map((mcpTool) => ({
+									input_schema: mcpTool.inputSchema,
+									name: mcpTool.name,
+									annotations: mcpTool.annotations,
+									description: mcpTool.description,
+								})),
+							});
+							tools?.push(
+								...mcpTools.tools.map((mcpTool) => ({
+									type: "function" as const,
+									function: {
+										name: mcpTool.name,
+										parameters: mcpTool.inputSchema,
+										description: mcpTool.description,
+									},
+								}))
+							);
+						} catch (error) {
+							console.error("Error listing tools from MCP server", error);
+							output.push({
+								id: generateUniqueId("mcp"),
+								type: "mcp_list_tools",
+								server_label: tool.server_label,
+								tools: [],
+								error: `Failed to list tools from MCP server ${tool.server_label}: ${error instanceof Error ? error.message : "Unknown error"}`,
+							});
+						}
+						break;
+				}
+			})
+		);
+	}
+	if (tools.length === 0) {
+		tools = undefined;
 	}
 
 	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
@@ -166,7 +208,7 @@ export const postCreateResponse = async (
 							},
 						}
 					: undefined,
-		tools: tools,
+		tools,
 		top_p: req.body.top_p,
 	};
 
@@ -179,7 +221,7 @@ export const postCreateResponse = async (
 		metadata: req.body.metadata,
 		model: req.body.model,
 		object: "response",
-		output: [],
+		output,
 		// parallel_tool_calls: req.body.parallel_tool_calls,
 		status: "in_progress",
 		text: req.body.text,
@@ -434,32 +476,36 @@ export const postCreateResponse = async (
 		const chatCompletionResponse = await client.chatCompletion(payload);
 
 		responseObject.status = "completed";
-		responseObject.output = chatCompletionResponse.choices[0].message.content
-			? [
-					{
-						id: generateUniqueId("msg"),
-						type: "message",
-						role: "assistant",
-						status: "completed",
-						content: [
-							{
-								type: "output_text",
-								text: chatCompletionResponse.choices[0].message.content,
-								annotations: [],
-							},
-						],
-					},
-				]
-			: chatCompletionResponse.choices[0].message.tool_calls
-				? chatCompletionResponse.choices[0].message.tool_calls.map((toolCall) => ({
+		chatCompletionResponse.choices.forEach((choice) => {
+			if (choice.message.content) {
+				responseObject.output.push({
+					id: generateUniqueId("msg"),
+					type: "message",
+					role: "assistant",
+					status: "completed",
+					content: [
+						{
+							type: "output_text",
+							text: choice.message.content,
+							annotations: [],
+						},
+					],
+				});
+			}
+			if (choice.message.tool_calls) {
+				choice.message.tool_calls.forEach((toolCall) => {
+					responseObject.output.push({
 						type: "function_call",
 						id: generateUniqueId("fc"),
 						call_id: toolCall.id,
 						name: toolCall.function.name,
 						arguments: toolCall.function.arguments,
 						status: "completed",
-					}))
-				: [];
+					});
+				});
+			}
+		});
+
 		responseObject.usage = {
 			input_tokens: chatCompletionResponse.usage.prompt_tokens,
 			input_tokens_details: { cached_tokens: 0 },
