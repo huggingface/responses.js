@@ -13,6 +13,7 @@ export async function connectMcpServers(mcpServers: McpServerParams[]): Promise<
 
 	for (const server of mcpServers) {
 		const mcp = new Client({ name: "@huggingface/responses.js", version: packageVersion });
+		const allowedTools = server.allowed_tools ? (Array.isArray(server.allowed_tools) ? server.allowed_tools : server.allowed_tools.tool_names) : [];
 
 		// Try to connect with http first, if that fails, try sse
 		const url = new URL(server.server_url);
@@ -41,6 +42,10 @@ export async function connectMcpServers(mcpServers: McpServerParams[]): Promise<
 		);
 		const tools = mcpTools.tools.reduce(
 			(acc, tool) => {
+				if (!allowedTools.includes(tool.name)) {
+					return acc;
+				}
+
 				acc[tool.name] = {
 					type: "function" as const,
 					function: {

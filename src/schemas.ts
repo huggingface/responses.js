@@ -35,7 +35,7 @@ const mcpServerParamsSchema = z.object({
 		z.object({
 			tool_names: z.array(z.string()),
 		}),
-	]),
+	]).nullable().default(null),
 	headers: z.record(z.string()).nullable().default(null),
 	require_approval: z.union([
 		z.enum(["always", "never"]),
