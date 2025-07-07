@@ -16,6 +16,7 @@ import type {
 	ResponseOutputMessage,
 	ResponseFunctionToolCall,
 } from "openai/resources/responses/responses";
+import { ChatCompletionStreamOutputUsage } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -200,8 +201,13 @@ export const postCreateResponse = async (
 			});
 
 			const stream = client.chatCompletionStream(payload);
+			let usage: ChatCompletionStreamOutputUsage | undefined;
 
 			for await (const chunk of stream) {
+				if (chunk.usage) {
+					usage = chunk.usage;
+				}
+
 				if (chunk.choices[0].delta.content) {
 					if (responseObject.output.length === 0) {
 						const outputObject: ResponseOutputMessage = {
@@ -367,6 +373,15 @@ export const postCreateResponse = async (
 
 			// Response completed event
 			responseObject.status = "completed";
+			if (usage) {
+				responseObject.usage = {
+					input_tokens: usage.prompt_tokens,
+					input_tokens_details: { cached_tokens: 0 },
+					output_tokens: usage.completion_tokens,
+					output_tokens_details: { reasoning_tokens: 0 },
+					total_tokens: usage.total_tokens,
+				};
+			}
 			emitEvent({
 				type: "response.completed",
 				response: responseObject as Response,
@@ -431,6 +446,13 @@ export const postCreateResponse = async (
 						status: "completed",
 					}))
 				: [];
+		responseObject.usage = {
+			input_tokens: chatCompletionResponse.usage.prompt_tokens,
+			input_tokens_details: { cached_tokens: 0 },
+			output_tokens: chatCompletionResponse.usage.completion_tokens,
+			output_tokens_details: { reasoning_tokens: 0 },
+			total_tokens: chatCompletionResponse.usage.total_tokens,
+		};
 
 		res.json(responseObject);
 	} catch (error) {
