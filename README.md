@@ -126,9 +126,9 @@ responses.js/
 - [x] Repository migration to dedicated responses.js repo
 - [x] Basic development tooling setup
 - [x] Demo application with comprehensive instructions
-- [ ] Multi-turn conversation fixes for text messages + tool calls
-- [ ] Correctly return "usage" field
-- [ ] Conversation state management
+- [x] Multi-turn conversation fixes for text messages + tool calls
+- [x] Correctly return "usage" field
+- [ ] Conversation state management (i.e. stateful server)
 - [ ] Tools execution (web search, file search, image generation, MCP, code interpreter)
 - [ ] Background mode support
 - [ ] Additional API routes (GET, DELETE, CANCEL, LIST responses)

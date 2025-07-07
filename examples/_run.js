@@ -24,5 +24,7 @@ if (!fs.existsSync(examplePath)) {
 	process.exit(1);
 }
 
+console.log(`Running script: ${examplePath}`);
+
 const result = spawnSync("node", [examplePath], { stdio: "inherit" });
 process.exit(result.status);
