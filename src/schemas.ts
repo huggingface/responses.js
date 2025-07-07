@@ -30,12 +30,15 @@ const mcpServerParamsSchema = z.object({
 	server_label: z.string(),
 	server_url: z.string(),
 	type: z.literal("mcp"),
-	allowed_tools: z.union([
-		z.array(z.string()),
-		z.object({
-			tool_names: z.array(z.string()),
-		}),
-	]).nullable().default(null),
+	allowed_tools: z
+		.union([
+			z.array(z.string()),
+			z.object({
+				tool_names: z.array(z.string()),
+			}),
+		])
+		.nullable()
+		.default(null),
 	headers: z.record(z.string()).nullable().default(null),
 	require_approval: z.union([
 		z.enum(["always", "never"]),
