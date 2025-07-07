@@ -26,6 +26,26 @@ const inputContentSchema = z.array(
 	])
 );
 
+const mcpServerParamsSchema = z.object({
+	server_label: z.string(),
+	server_url: z.string(),
+	type: z.literal("mcp"),
+	allowed_tools: z.union([
+		z.array(z.string()),
+		z.object({
+			tool_names: z.array(z.string()),
+		}),
+	]),
+	headers: z.record(z.string()).nullable().default(null),
+	require_approval: z.union([
+		z.enum(["always", "never"]),
+		z.object({
+			always: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
+			never: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
+		}),
+	]),
+});
+
 export const createResponseParamsSchema = z.object({
 	// background: z.boolean().default(false),
 	// include:
@@ -141,13 +161,16 @@ export const createResponseParamsSchema = z.object({
 		.optional(),
 	tools: z
 		.array(
-			z.object({
-				name: z.string(),
-				parameters: z.record(z.any()),
-				strict: z.boolean().default(true),
-				type: z.enum(["function"]),
-				description: z.string().optional(),
-			})
+			z.union([
+				z.object({
+					name: z.string(),
+					parameters: z.record(z.any()),
+					strict: z.boolean().default(true),
+					type: z.enum(["function"]),
+					description: z.string().optional(),
+				}),
+				mcpServerParamsSchema,
+			])
 		)
 		.optional(),
 	// top_logprobs: z.number().min(0).max(20).nullable().default(null),
@@ -157,3 +180,4 @@ export const createResponseParamsSchema = z.object({
 });
 
 export type CreateResponseParams = z.infer<typeof createResponseParamsSchema>;
+export type McpServerParams = z.infer<typeof mcpServerParamsSchema>;

@@ -1,6 +1,6 @@
 import { type Response as ExpressResponse } from "express";
 import { type ValidatedRequest } from "../middleware/validation.js";
-import { type CreateResponseParams } from "../schemas.js";
+import type { CreateResponseParams, McpServerParams } from "../schemas.js";
 import { generateUniqueId } from "../lib/generateUniqueId.js";
 import { InferenceClient } from "@huggingface/inference";
 import type {
@@ -16,7 +16,11 @@ import type {
 	ResponseOutputMessage,
 	ResponseFunctionToolCall,
 } from "openai/resources/responses/responses";
-import { ChatCompletionStreamOutputUsage } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
+import type {
+	ChatCompletionInputTool,
+	ChatCompletionStreamOutputUsage,
+} from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
+import { connectMcpServers } from "../lib/connectMcpServers.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -105,6 +109,26 @@ export const postCreateResponse = async (
 		messages.push({ role: "user", content: req.body.input });
 	}
 
+	const mcpServers: McpServerParams[] = req.body.tools?.filter((tool) => tool.type === "mcp") as McpServerParams[];
+	const tools: ChatCompletionInputTool[] | undefined = req.body.tools
+		?.filter((tool) => tool.type !== "mcp")
+		.map((tool) => ({
+			type: tool.type,
+			function: {
+				name: tool.name,
+				parameters: tool.parameters,
+				description: tool.description,
+				strict: tool.strict,
+			},
+		}));
+
+	const mcpClients = await connectMcpServers(mcpServers);
+	Object.values(mcpClients).forEach((client) => Object.values(client.tools).forEach((tool) => tools?.push(tool)));
+
+	if (tools) {
+		console.log("Tools:", tools);
+	}
+
 	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
 	const provider = req.body.model.includes("@") ? req.body.model.split("@")[0] : undefined;
 
@@ -142,17 +166,7 @@ export const postCreateResponse = async (
 							},
 						}
 					: undefined,
-		tools: req.body.tools
-			? req.body.tools.map((tool) => ({
-					type: tool.type,
-					function: {
-						name: tool.name,
-						parameters: tool.parameters,
-						description: tool.description,
-						strict: tool.strict,
-					},
-				}))
-			: undefined,
+		tools: tools,
 		top_p: req.body.top_p,
 	};
 
