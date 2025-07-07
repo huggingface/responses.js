@@ -128,6 +128,10 @@ responses.js/
 - [x] Demo application with comprehensive instructions
 - [x] Multi-turn conversation fixes for text messages + tool calls
 - [x] Correctly return "usage" field
+- [ ] MCP support
+  - [x] Accept MCP as input + connect to MCP servers + forward tools to LLM
+  - [ ] Handle tool call (call MCP tool if LLM selects one)
+  - [ ] Handle require_approval (optionally ask user permission before moving forward)
 - [ ] Conversation state management (i.e. stateful server)
 - [ ] Tools execution (web search, file search, image generation, MCP, code interpreter)
 - [ ] Background mode support
