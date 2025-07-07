@@ -29,6 +29,9 @@ const stream = openai.responses
 	})
 	.on("response.error", (event) => {
 		console.error(event.error);
+	})
+	.on("response.completed", (event) => {
+		console.log(event.response);
 	});
 
 const result = await stream.finalResponse();
