@@ -39,7 +39,8 @@
 		"demo:install": "cd demo && npm install",
 		"demo:lint": "cd demo && npm run lint",
 		"demo:format": "cd demo && npm run format",
-		"demo:start": "cd demo && npm run start"
+		"demo:start": "cd demo && npm run start",
+		"deploy:spaces": "./push_to_space.sh"
 	},
 	"files": [
 		"src",
