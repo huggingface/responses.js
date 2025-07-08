@@ -396,7 +396,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
 
 const openai = new OpenAI({
-  baseURL: "http://localhost:3000/v1",
+  baseURL: "${baseUrl}",
   apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
 });
 
@@ -440,7 +440,7 @@ console.log(response.output_text);</code></pre>
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
 
 const openai = new OpenAI({
-  baseURL: "http://localhost:3000/v1",
+  baseURL: "${baseUrl}",
   apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
 });
 const response = await openai.responses.create({
@@ -463,7 +463,7 @@ console.log(response.output_text);</code></pre>
       <div class="example-panel">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import { OpenAI } from "openai";
 const openai = new OpenAI({
-  baseURL: "http://localhost:3000/v1",
+  baseURL: "${baseUrl}",
   apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
 });
 
@@ -521,7 +521,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 
 const openai = new OpenAI({
-  baseURL: "http://localhost:3000/v1",
+  baseURL: "${baseUrl}",
   apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
 });
 
