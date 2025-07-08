@@ -1,0 +1,10 @@
+node_modules
+pnpm-debug.log
+dist
+demo
+examples
+.git
+.gitignore
+Dockerfile
+README.md
+*.md 
