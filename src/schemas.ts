@@ -40,13 +40,15 @@ const mcpServerParamsSchema = z.object({
 		.nullable()
 		.default(null),
 	headers: z.record(z.string()).nullable().default(null),
-	require_approval: z.union([
-		z.enum(["always", "never"]),
-		z.object({
-			always: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
-			never: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
-		}),
-	]).default("always"),
+	require_approval: z
+		.union([
+			z.enum(["always", "never"]),
+			z.object({
+				always: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
+				never: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
+			}),
+		])
+		.default("always"),
 });
 
 const mcpApprovalRequestParamsSchema = z.object({

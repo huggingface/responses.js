@@ -1,6 +1,6 @@
 /**
  * In this example, we are sending back a MCP approval response to the server but forgot to include the approval request.
- * 
+ *
  * Expected: response.error is not null.
  */
 
