@@ -1,7 +1,9 @@
 import type { Request, Response } from "express";
 
 export function getLandingPageHtml(req: Request, res: Response): void {
-	const baseUrl = `${req.protocol}://${req.get("host")}/v1`;
+	const host = req.get("host");
+	const protocol = host && host.endsWith(".hf.space") ? "https" : req.protocol;
+	const baseUrl = `${protocol}://${host}/v1`;
 	res.setHeader("Content-Type", "text/html; charset=utf-8");
 	res.send(`
 <!DOCTYPE html>
