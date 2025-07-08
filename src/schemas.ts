@@ -103,10 +103,20 @@ export const createResponseParamsSchema = z.object({
 					id: z.string().optional(),
 					status: z.enum(["in_progress", "completed", "incomplete"]),
 				}),
-				// z.object({
-				// 	id: z.string(),
-				// 	type: z.enum(["item_reference"]).default("item_reference"),
-				// }),
+				z.object({
+					type: z.literal("mcp_list_tools"),
+					id: z.string(),
+					server_label: z.string(),
+					tools: z.array(
+						z.object({
+							name: z.string(),
+							input_schema: z.record(z.any()),
+							description: z.string().nullable().optional(),
+							annotations: z.object({}).optional(),
+						})
+					),
+					error: z.string().nullable().optional(),
+				}),
 			])
 		),
 	]),

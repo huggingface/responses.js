@@ -103,6 +103,14 @@ export const postCreateResponse = async (
 												})
 												.filter((item) => item !== undefined),
 							};
+						case "mcp_list_tools": {
+							return {
+								// Hacky: will be dropped by filter
+								role: "assistant",
+								name: "mcp_list_tools",
+								content: "",
+							};
+						}
 					}
 				})
 				.filter((message) => message.content?.length !== 0)
@@ -129,59 +137,79 @@ export const postCreateResponse = async (
 							},
 						});
 						break;
-					case "mcp":
-						try {
-							const allowedTools = tool.allowed_tools
-								? Array.isArray(tool.allowed_tools)
-									? tool.allowed_tools
-									: tool.allowed_tools.tool_names
-								: [];
-							const mcp = await connectMcpServer(tool);
-							const mcpTools = await mcp.listTools();
+					case "mcp": {
+						let mcpListTools: ResponseOutputItem.McpListTools | undefined;
 
-							// All tools are returned in Response object
-							output.push({
-								id: generateUniqueId("mcp"),
-								type: "mcp_list_tools",
-								server_label: tool.server_label,
-								tools: mcpTools.tools.map((mcpTool) => ({
-									input_schema: mcpTool.inputSchema,
-									name: mcpTool.name,
-									annotations: mcpTool.annotations,
-									description: mcpTool.description,
-								})),
-							});
-							// But only the allowed tools are forwarded to the LLM
-							tools?.push(
-								...mcpTools.tools
-									.filter((mcpTool) => allowedTools.length === 0 || allowedTools.includes(mcpTool.name))
-									.map((mcpTool) => ({
+						// If MCP list tools is already in the input, use it
+						if (Array.isArray(req.body.input)) {
+							for (const item of req.body.input) {
+								if (item.type === "mcp_list_tools" && item.server_label === tool.server_label) {
+									mcpListTools = item;
+									console.debug(`Using MCP list tools from input for server '${tool.server_label}'`);
+									break;
+								}
+							}
+						} else {
+							// Otherwise, list tools from MCP server
+							try {
+								const mcp = await connectMcpServer(tool);
+								console.debug("Listing MCP tools from server");
+								const mcpTools = await mcp.listTools();
+								console.debug(`Fetched ${mcpTools.tools.length} tools from MCP server '${tool.server_label}'`);
+
+								// All tools are returned in Response object
+								mcpListTools = {
+									id: generateUniqueId("mcp_list_tools"),
+									type: "mcp_list_tools",
+									server_label: tool.server_label,
+									tools: mcpTools.tools.map((mcpTool) => ({
+										input_schema: mcpTool.inputSchema,
+										name: mcpTool.name,
+										annotations: mcpTool.annotations,
+										description: mcpTool.description,
+									})),
+								};
+							} catch (error) {
+								console.error("Error listing tools from MCP server", error);
+								mcpListTools = {
+									id: generateUniqueId("mcp_list_tools"),
+									type: "mcp_list_tools",
+									server_label: tool.server_label,
+									tools: [],
+									error: `Failed to list tools from MCP server '${tool.server_label}': ${error instanceof Error ? error.message : "Unknown error"}`,
+								};
+							}
+							output.push(mcpListTools);
+						}
+
+						// Only allowed tools are forwarded to the LLM
+						const allowedTools = tool.allowed_tools
+							? Array.isArray(tool.allowed_tools)
+								? tool.allowed_tools
+								: tool.allowed_tools.tool_names
+							: [];
+						if (mcpListTools?.tools) {
+							for (const mcpTool of mcpListTools.tools) {
+								if (allowedTools.length === 0 || allowedTools.includes(mcpTool.name)) {
+									tools?.push({
 										type: "function" as const,
 										function: {
 											name: mcpTool.name,
-											parameters: mcpTool.inputSchema,
-											description: mcpTool.description,
+											parameters: mcpTool.input_schema,
+											description: mcpTool.description ?? undefined,
 										},
-									}))
-							);
-							for (const mcpTool of mcpTools.tools) {
+									});
+								}
 								mcpToolsMapping[mcpTool.name] = tool;
 							}
-						} catch (error) {
-							console.error("Error listing tools from MCP server", error);
-							output.push({
-								id: generateUniqueId("mcp"),
-								type: "mcp_list_tools",
-								server_label: tool.server_label,
-								tools: [],
-								error: `Failed to list tools from MCP server ${tool.server_label}: ${error instanceof Error ? error.message : "Unknown error"}`,
-							});
+							break;
 						}
-						break;
+					}
 				}
 			})
 		);
 	}
+
 	if (tools.length === 0) {
 		tools = undefined;
 	}
