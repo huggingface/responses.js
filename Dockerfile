@@ -1,33 +1,40 @@
 # ---- Build Stage ----
 FROM node:18-alpine AS builder
 
-# Install pnpm
+# Install pnpm as root
 RUN corepack enable && corepack prepare pnpm@10.10.0 --activate
 
-WORKDIR /app
+USER node
+ENV HOME=/home/node \
+    PATH=/home/node/.local/bin:$PATH
+
+WORKDIR $HOME/app
 
 # Install dependencies and build
-COPY package.json pnpm-lock.yaml* ./
-COPY tsconfig.json ./
-COPY src ./src
+COPY --chown=node package.json pnpm-lock.yaml* ./
+COPY --chown=node tsconfig.json ./
+COPY --chown=node src ./src
 RUN pnpm install --frozen-lockfile
 RUN pnpm run build
+RUN chown -R node:node $HOME/app
 
 # ---- Production Stage ----
 FROM node:18-alpine AS runner
 
+# No need to install pnpm here, just switch to node user
+USER node
+ENV HOME=/home/node \
+    PATH=/home/node/.local/bin:$PATH
+
 # Create app directory
-WORKDIR /app
+WORKDIR $HOME/app
 
 # Copy only necessary files from builder
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/node_modules ./node_modules
+COPY --chown=node --from=builder /home/node/app/dist ./dist
+COPY --chown=node --from=builder /home/node/app/package.json ./
+COPY --chown=node --from=builder /home/node/app/node_modules ./node_modules
 
 # Use a non-root user for security
-RUN adduser -D appuser
-USER appuser
-
 EXPOSE 3000
 
 CMD ["node", "dist/index.js"]
