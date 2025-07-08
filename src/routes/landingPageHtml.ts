@@ -397,10 +397,11 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       </div>
       <div class="example-panel active">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
 
 client = OpenAI(
     base_url="${baseUrl}",
-    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
 )
 
 response = client.responses.create(
@@ -414,10 +415,11 @@ print(response.output_text)</code></pre>
       </div>
       <div class="example-panel">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
 
 client = OpenAI(
     base_url="${baseUrl}",
-    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
 )
 
 response = client.responses.create(
@@ -441,10 +443,11 @@ print(response.output_text)</code></pre>
       </div>
       <div class="example-panel">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
 
 client = OpenAI(
     base_url="${baseUrl}",
-    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
 )
 
 response = client.responses.create(
@@ -466,10 +469,11 @@ print(response.output_text)</code></pre>
       </div>
       <div class="example-panel">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
 
 client = OpenAI(
     base_url="${baseUrl}",
-    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
 )
 
 stream = client.responses.create(
@@ -488,10 +492,11 @@ for event in stream:
       </div>
       <div class="example-panel">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
 
 client = OpenAI(
     base_url="${baseUrl}",
-    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
 )
 
 tools = [
@@ -522,10 +527,11 @@ print(response)</code></pre>
       <div class="example-panel">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
 from pydantic import BaseModel
+import os
 
 client = OpenAI(
     base_url="${baseUrl}",
-    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
 )
 
 class CalendarEvent(BaseModel):
