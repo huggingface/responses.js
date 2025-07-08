@@ -363,7 +363,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       <div class="api-endpoint-box">
         <button class="copy-endpoint-btn" onclick="copyEndpointUrl(this)">Copy</button>
         <div><b>API Endpoint:</b></div>
-        <span class="api-endpoint-url" id="api-endpoint-url">${baseUrl}/responses</span>
+        <span class="api-endpoint-url" id="api-endpoint-url">${baseUrl}</span>
         <div style="font-size:0.98em; color:#333; margin-top:0.5em;">Get started by sending requests to this endpoint</div>
       </div>
       <a class="cta" href="https://github.com/huggingface/responses.js" target="_blank">View on GitHub</a>
