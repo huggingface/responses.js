@@ -46,7 +46,7 @@ const mcpServerParamsSchema = z.object({
 			always: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
 			never: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
 		}),
-	]),
+	]).default("always"),
 });
 
 const mcpApprovalRequestParamsSchema = z.object({
