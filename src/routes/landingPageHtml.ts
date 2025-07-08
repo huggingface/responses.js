@@ -300,6 +300,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
   <script>
     function copyCode(btn) {
       const pre = btn.parentElement;
@@ -395,163 +396,156 @@ export function getLandingPageHtml(req: Request, res: Response): void {
         <button class="examples-tab" type="button">Structured Output</button>
       </div>
       <div class="example-panel active">
-        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
 
-const openai = new OpenAI({
-  baseURL: "${baseUrl}",
-  apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
-});
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+)
 
-const response = await openai.responses.create({
-  model: "Qwen/Qwen2.5-VL-7B-Instruct",
-  instructions: "You are a helpful assistant.",
-  input: "Tell me a three sentence bedtime story about a unicorn.",
-});
+response = client.responses.create(
+    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    instructions="You are a helpful assistant.",
+    input="Tell me a three sentence bedtime story about a unicorn.",
+)
 
-console.log(response);
-console.log(response.output_text);</code></pre>
+print(response)
+print(response.output_text)</code></pre>
       </div>
       <div class="example-panel">
-        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
 
-const openai = new OpenAI({
-  baseURL: "${baseUrl}",
-  apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
-});
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+)
 
-const response = await openai.responses.create({
-  model: "Qwen/Qwen2.5-VL-7B-Instruct",
-  input: [
-    {
-      role: "user",
-      content: [
-        { type: "input_text", text: "what is in this image?" },
+response = client.responses.create(
+    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    input=[
         {
-          type: "input_image",
-          image_url: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg"
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "what is in this image?"},
+                {
+                    "type": "input_image",
+                    "image_url": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/2560px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg",
+                },
+            ],
         }
-      ]
+    ],
+)
+
+print(response)
+print(response.output_text)</code></pre>
+      </div>
+      <div class="example-panel">
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+)
+
+response = client.responses.create(
+    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    input=[
+        {
+            "role": "developer",
+            "content": "Talk like a pirate.",
+        },
+        {
+            "role": "user",
+            "content": "Are semicolons optional in JavaScript?",
+        },
+    ],
+)
+
+print(response)
+print(response.output_text)</code></pre>
+      </div>
+      <div class="example-panel">
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+)
+
+stream = client.responses.create(
+    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    input=[
+        {
+            "role": "user",
+            "content": "Say 'double bubble bath' ten times fast.",
+        },
+    ],
+    stream=True,
+)
+
+for event in stream:
+    print(event)</code></pre>
+      </div>
+      <div class="example-panel">
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+)
+
+tools = [
+    {
+        "type": "function",
+        "name": "get_current_weather",
+        "description": "Get the current weather in a given location",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "The city and state, e.g. San Francisco, CA"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
+            "required": ["location", "unit"],
+        },
     }
-  ]
-});
+]
 
-console.log(response);
-console.log(response.output_text);</code></pre>
+response = client.responses.create(
+    model="cerebras@meta-llama/Llama-3.3-70B-Instruct",
+    tools=tools,
+    input="What is the weather like in Boston today?",
+    tool_choice="auto",
+)
+
+print(response)</code></pre>
       </div>
       <div class="example-panel">
-        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+from pydantic import BaseModel
 
-const openai = new OpenAI({
-  baseURL: "${baseUrl}",
-  apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
-});
-const response = await openai.responses.create({
-  model: "Qwen/Qwen2.5-VL-7B-Instruct",
-  input: [
-    {
-      role: "developer",
-      content: "Talk like a pirate.",
-    },
-    {
-      role: "user",
-      content: "Are semicolons optional in JavaScript?",
-    },
-  ],
-});
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key="YOUR_API_KEY_HERE", # visit https://huggingface.co/settings/tokens
+)
 
-console.log(response);
-console.log(response.output_text);</code></pre>
-      </div>
-      <div class="example-panel">
-        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import { OpenAI } from "openai";
-const openai = new OpenAI({
-  baseURL: "${baseUrl}",
-  apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
-});
+class CalendarEvent(BaseModel):
+    name: str
+    date: str
+    participants: list[str]
 
-const stream = await openai.responses.create({
-  model: "hyperbolic@Qwen/Qwen2.5-VL-7B-Instruct",
-  input: [
-    {
-      role: "user",
-      content: "Say 'double bubble bath' ten times fast.",
-    },
-  ],
-  stream: true,
-});
+response = client.responses.parse(
+    model="novita@meta-llama/Meta-Llama-3-70B-Instruct",
+    input=[
+        {"role": "system", "content": "Extract the event information."},
+        {
+            "role": "user",
+            "content": "Alice and Bob are going to a science fair on Friday.",
+        },
+    ],
+    text_format=CalendarEvent,
+)
 
-for await (const event of stream) {
-  console.log(event);
-}</code></pre>
-      </div>
-      <div class="example-panel">
-        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
-
-const openai = new OpenAI({
-  baseURL: "${baseUrl}",
-  apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
-});
-
-const tools = [
-  {
-    type: "function",
-    name: "get_current_weather",
-    description: "Get the current weather in a given location",
-    parameters: {
-      type: "object",
-      properties: {
-        location: { type: "string", description: "The city and state, e.g. San Francisco, CA" },
-        unit: { type: "string", enum: ["celsius", "fahrenheit"] }
-      },
-      required: ["location", "unit"]
-    }
-  }
-];
-
-const response = await openai.responses.create({
-  model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
-  tools: tools,
-  input: "What is the weather like in Boston today?",
-  tool_choice: "auto"
-});
-
-console.log(response);</code></pre>
-      </div>
-      <div class="example-panel">
-        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-js">import OpenAI from "openai";
-import { zodTextFormat } from "openai/helpers/zod";
-import { z } from "zod";
-
-const openai = new OpenAI({
-  baseURL: "${baseUrl}",
-  apiKey: "YOUR_API_KEY_HERE", // visit https://huggingface.co/settings/tokens
-});
-
-const Step = z.object({
-  explanation: z.string(),
-  output: z.string(),
-});
-
-const MathReasoning = z.object({
-  steps: z.array(Step),
-  final_answer: z.string(),
-});
-
-const response = await openai.responses.parse({
-  model: "novita@meta-llama/Meta-Llama-3-70B-Instruct",
-  input: [
-    {
-      role: "system",
-      content: "You are a helpful math tutor. Guide the user through the solution step by step.",
-    },
-    { role: "user", content: "how can I solve 8x + 7 = -23" },
-  ],
-  text: {
-    format: zodTextFormat(MathReasoning, "math_reasoning"),
-  },
-});
-
-console.log(response.output_parsed);</code></pre>
+print(response.output_parsed)</code></pre>
       </div>
     </section>
     <footer class="more-info-footer">
