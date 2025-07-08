@@ -49,6 +49,21 @@ const mcpServerParamsSchema = z.object({
 	]),
 });
 
+const mcpApprovalRequestParamsSchema = z.object({
+	type: z.literal("mcp_approval_request"),
+	id: z.string(),
+	server_label: z.string(),
+	name: z.string(),
+	arguments: z.string(),
+});
+const mcpApprovalResponseParamsSchema = z.object({
+	type: z.literal("mcp_approval_response"),
+	id: z.string().optional(),
+	approval_request_id: z.string(),
+	approve: z.boolean(),
+	reason: z.string().optional(),
+});
+
 export const createResponseParamsSchema = z.object({
 	// background: z.boolean().default(false),
 	// include:
@@ -117,6 +132,8 @@ export const createResponseParamsSchema = z.object({
 					),
 					error: z.string().nullable().optional(),
 				}),
+				mcpApprovalRequestParamsSchema,
+				mcpApprovalResponseParamsSchema,
 			])
 		),
 	]),
@@ -194,3 +211,5 @@ export const createResponseParamsSchema = z.object({
 
 export type CreateResponseParams = z.infer<typeof createResponseParamsSchema>;
 export type McpServerParams = z.infer<typeof mcpServerParamsSchema>;
+export type McpApprovalRequestParams = z.infer<typeof mcpApprovalRequestParamsSchema>;
+export type McpApprovalResponseParams = z.infer<typeof mcpApprovalResponseParamsSchema>;

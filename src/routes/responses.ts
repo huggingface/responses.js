@@ -1,6 +1,6 @@
 import { type Response as ExpressResponse } from "express";
 import { type ValidatedRequest } from "../middleware/validation.js";
-import type { CreateResponseParams, McpServerParams } from "../schemas.js";
+import type { CreateResponseParams, McpServerParams, McpApprovalRequestParams } from "../schemas.js";
 import { generateUniqueId } from "../lib/generateUniqueId.js";
 import { InferenceClient } from "@huggingface/inference";
 import type {
@@ -21,8 +21,7 @@ import type {
 	ChatCompletionInputTool,
 	ChatCompletionStreamOutputUsage,
 } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
-import { connectMcpServer } from "../mcp.js";
-import { McpResultFormatter } from "../lib/McpResultFormatter.js";
+import { callMcpTool, connectMcpServer } from "../mcp.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -104,11 +103,25 @@ export const postCreateResponse = async (
 												.filter((item) => item !== undefined),
 							};
 						case "mcp_list_tools": {
+							// Hacky: will be dropped by filter
 							return {
-								// Hacky: will be dropped by filter
 								role: "assistant",
 								name: "mcp_list_tools",
 								content: "",
+							};
+						}
+						case "mcp_approval_request": {
+							return {
+								role: "assistant",
+								name: "mcp_approval_request",
+								content: `MCP approval request (${item.id}). Server: '${item.server_label}'. Tool: '${item.name}'. Arguments: '${item.arguments}'.`,
+							};
+						}
+						case "mcp_approval_response": {
+							return {
+								role: "assistant",
+								name: "mcp_approval_response",
+								content: `MCP approval response (${item.id}). Approved: ${item.approve}. Reason: ${item.reason}.`,
 							};
 						}
 					}
@@ -149,8 +162,9 @@ export const postCreateResponse = async (
 									break;
 								}
 							}
-						} else {
-							// Otherwise, list tools from MCP server
+						}
+						// Otherwise, list tools from MCP server
+						if (!mcpListTools) {
 							try {
 								const mcp = await connectMcpServer(tool);
 								console.debug("Listing MCP tools from server");
@@ -272,8 +286,48 @@ export const postCreateResponse = async (
 		tools: req.body.tools ?? [],
 		temperature: req.body.temperature,
 		top_p: req.body.top_p,
+		usage: {
+			input_tokens: 0,
+			input_tokens_details: { cached_tokens: 0 },
+			output_tokens: 0,
+			output_tokens_details: { reasoning_tokens: 0 },
+			total_tokens: 0,
+		},
 	};
 
+	// MCP approval requests => do not call LLM at all
+	if (Array.isArray(req.body.input)) {
+		for (const item of req.body.input) {
+			// Note: currently supporting only 1 mcp_approval_response per request
+			if (item.type === "mcp_approval_response" && item.approve) {
+				const approvalRequest = req.body.input.find(
+					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
+				) as McpApprovalRequestParams | undefined;
+				console.log("approvalRequest", approvalRequest);
+				if (approvalRequest) {
+					const toolParams = mcpToolsMapping[approvalRequest.name];
+					responseObject.output.push(
+						await callMcpTool(toolParams, approvalRequest.name, toolParams.server_label, approvalRequest.arguments)
+					);
+					responseObject.status = "completed";
+					res.json(responseObject);
+					return;
+				} else {
+					responseObject.status = "failed";
+					const errorMessage = `MCP approval response for approval request '${item.approval_request_id}' not found`;
+					console.error(errorMessage);
+					responseObject.error = {
+						code: "server_error",
+						message: errorMessage,
+					};
+					res.json(responseObject);
+					return;
+				}
+			}
+		}
+	}
+
+	// Streaming mode
 	if (req.body.stream) {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Connection", "keep-alive");
@@ -563,33 +617,14 @@ export const postCreateResponse = async (
 								arguments: toolCall.function.arguments,
 							});
 						} else {
-							console.log(`Calling MCP tool '${toolCall.function.name}'`);
-							try {
-								const client = await connectMcpServer(toolParams);
-								const toolArgs: Record<string, unknown> =
-									toolCall.function.arguments === "" ? {} : JSON.parse(toolCall.function.arguments);
-								const toolResponse = await client.callTool({ name: toolCall.function.name, arguments: toolArgs });
-								const formattedResult = McpResultFormatter.format(toolResponse);
-								responseObject.output.push({
-									type: "mcp_call",
-									id: generateUniqueId("mcp_call"),
-									name: toolCall.function.name,
-									server_label: toolParams.server_label,
-									arguments: toolCall.function.arguments,
-									output: formattedResult,
-								});
-							} catch (error) {
-								const errorMessage =
-									error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error);
-								responseObject.output.push({
-									type: "mcp_call",
-									id: generateUniqueId("mcp_call"),
-									name: toolCall.function.name,
-									server_label: toolParams.server_label,
-									arguments: toolCall.function.arguments,
-									error: errorMessage,
-								});
-							}
+							responseObject.output.push(
+								await callMcpTool(
+									toolParams,
+									toolCall.function.name,
+									toolParams.server_label,
+									toolCall.function.arguments
+								)
+							);
 						}
 					} else {
 						responseObject.output.push({
