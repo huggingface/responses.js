@@ -22,6 +22,7 @@ import type {
 	ChatCompletionStreamOutputUsage,
 } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
 import { connectMcpServer } from "../mcp.js";
+import { McpResultFormatter } from "../lib/McpResultFormatter.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -112,6 +113,7 @@ export const postCreateResponse = async (
 
 	const output: ResponseOutputItem[] = [];
 	let tools: ChatCompletionInputTool[] | undefined = [];
+	const mcpToolsMapping: Record<string, McpServerParams> = {};
 	if (req.body.tools) {
 		await Promise.all(
 			req.body.tools.map(async (tool) => {
@@ -129,8 +131,15 @@ export const postCreateResponse = async (
 						break;
 					case "mcp":
 						try {
+							const allowedTools = tool.allowed_tools
+								? Array.isArray(tool.allowed_tools)
+									? tool.allowed_tools
+									: tool.allowed_tools.tool_names
+								: [];
 							const mcp = await connectMcpServer(tool);
 							const mcpTools = await mcp.listTools();
+
+							// All tools are returned in Response object
 							output.push({
 								id: generateUniqueId("mcp"),
 								type: "mcp_list_tools",
@@ -142,16 +151,22 @@ export const postCreateResponse = async (
 									description: mcpTool.description,
 								})),
 							});
+							// But only the allowed tools are forwarded to the LLM
 							tools?.push(
-								...mcpTools.tools.map((mcpTool) => ({
-									type: "function" as const,
-									function: {
-										name: mcpTool.name,
-										parameters: mcpTool.inputSchema,
-										description: mcpTool.description,
-									},
-								}))
+								...mcpTools.tools
+									.filter((mcpTool) => allowedTools.length === 0 || allowedTools.includes(mcpTool.name))
+									.map((mcpTool) => ({
+										type: "function" as const,
+										function: {
+											name: mcpTool.name,
+											parameters: mcpTool.inputSchema,
+											description: mcpTool.description,
+										},
+									}))
 							);
+							for (const mcpTool of mcpTools.tools) {
+								mcpToolsMapping[mcpTool.name] = tool;
+							}
 						} catch (error) {
 							console.error("Error listing tools from MCP server", error);
 							output.push({
@@ -476,7 +491,7 @@ export const postCreateResponse = async (
 		const chatCompletionResponse = await client.chatCompletion(payload);
 
 		responseObject.status = "completed";
-		chatCompletionResponse.choices.forEach((choice) => {
+		for (const choice of chatCompletionResponse.choices) {
 			if (choice.message.content) {
 				responseObject.output.push({
 					id: generateUniqueId("msg"),
@@ -493,18 +508,48 @@ export const postCreateResponse = async (
 				});
 			}
 			if (choice.message.tool_calls) {
-				choice.message.tool_calls.forEach((toolCall) => {
-					responseObject.output.push({
-						type: "function_call",
-						id: generateUniqueId("fc"),
-						call_id: toolCall.id,
-						name: toolCall.function.name,
-						arguments: toolCall.function.arguments,
-						status: "completed",
-					});
-				});
+				for (const toolCall of choice.message.tool_calls) {
+					if (toolCall.function.name in mcpToolsMapping) {
+						console.log(`MCP call to ${toolCall.function.name}`);
+						try {
+							const client = await connectMcpServer(mcpToolsMapping[toolCall.function.name]);
+							const toolArgs: Record<string, unknown> =
+								toolCall.function.arguments === "" ? {} : JSON.parse(toolCall.function.arguments);
+							const toolResponse = await client.callTool({ name: toolCall.function.name, arguments: toolArgs });
+							const formattedResult = McpResultFormatter.format(toolResponse);
+							responseObject.output.push({
+								type: "mcp_call",
+								id: generateUniqueId("mcp_call"),
+								name: toolCall.function.name,
+								server_label: mcpToolsMapping[toolCall.function.name].server_label,
+								arguments: toolCall.function.arguments,
+								output: formattedResult,
+							});
+						} catch (error) {
+							const errorMessage =
+								error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error);
+							responseObject.output.push({
+								type: "mcp_call",
+								id: generateUniqueId("mcp_call"),
+								name: toolCall.function.name,
+								server_label: mcpToolsMapping[toolCall.function.name].server_label,
+								arguments: toolCall.function.arguments,
+								error: errorMessage,
+							});
+						}
+					} else {
+						responseObject.output.push({
+							type: "function_call",
+							id: generateUniqueId("fc"),
+							call_id: toolCall.id,
+							name: toolCall.function.name,
+							arguments: toolCall.function.arguments,
+							status: "completed",
+						});
+					}
+				}
 			}
-		});
+		}
 
 		responseObject.usage = {
 			input_tokens: chatCompletionResponse.usage.prompt_tokens,
