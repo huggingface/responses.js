@@ -26,7 +26,11 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       --radius: 14px;
       --shadow: 0 4px 24px #0002;
     }
-    html, body { height: 100%; }
+    html, body {
+      height: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+    }
     body {
       font-family: 'Inter', Arial, sans-serif;
       background: var(--bg);
@@ -35,6 +39,12 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .header-inner, main, .hero, .api-endpoint-box, .features, .feature-card, .examples-section, .more-info-footer {
+      width: 100%;
+      box-sizing: border-box;
     }
     .sticky-header {
       position: sticky;
@@ -43,6 +53,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       background: linear-gradient(90deg, var(--primary) 0%, #60a5fa 100%);
       color: #fff;
       box-shadow: 0 2px 12px #0001;
+      width: 100%;
     }
     .header-inner {
       max-width: 1100px;
@@ -51,11 +62,14 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       align-items: center;
       justify-content: space-between;
       padding: 1.5rem 1.5rem 1.2rem 1.5rem;
+      width: 100%;
+      box-sizing: border-box;
     }
     .header-title {
       display: flex;
       align-items: center;
       gap: 0.8rem;
+      min-width: 0;
     }
     .header-title svg {
       height: 2.2rem;
@@ -67,6 +81,9 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       font-weight: 700;
       margin: 0;
       letter-spacing: -1px;
+      white-space: pre-line;
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
     .github-btn {
       background: #fff2;
@@ -81,6 +98,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       align-items: center;
       gap: 0.5em;
       transition: background 0.2s, color 0.2s;
+      min-width: 0;
     }
     .github-btn:hover {
       background: #fff;
@@ -94,6 +112,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       display: flex;
       flex-direction: column;
       gap: 2.5rem;
+      width: 100%;
+      box-sizing: border-box;
     }
     .hero {
       background: linear-gradient(120deg, #dbeafe 0%, #f0fdf4 100%);
@@ -106,17 +126,23 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       text-align: center;
       position: relative;
       overflow: hidden;
+      width: 100%;
+      box-sizing: border-box;
     }
     .hero h2 {
       font-size: 2rem;
       font-weight: 700;
       margin: 0 0 0.7rem 0;
       color: var(--primary-dark);
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
     .hero p {
       font-size: 1.18rem;
       color: var(--muted);
       margin: 0 0 1.5rem 0;
+      word-break: break-word;
+      overflow-wrap: anywhere;
     }
     .api-endpoint-box {
       background: #fff;
@@ -132,6 +158,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       flex-direction: column;
       align-items: center;
       gap: 0.5em;
+      width: 100%;
+      box-sizing: border-box;
     }
     .api-endpoint-url {
       display: inline-block;
@@ -144,6 +172,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       border: 1px solid #cbd5e1;
       margin: 0.5em 0 0.5em 0;
       word-break: break-all;
+      overflow-wrap: anywhere;
+      max-width: 100%;
     }
     .copy-endpoint-btn {
       position: absolute;
@@ -159,6 +189,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       opacity: 0.85;
       transition: background 0.2s, opacity 0.2s;
       z-index: 2;
+      min-width: 0;
     }
     .copy-endpoint-btn:hover { background: var(--primary-dark); opacity: 1; }
     .copy-endpoint-btn.copied { background: #388e3c; color: #fff; opacity: 1; }
@@ -174,6 +205,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       transition: background 0.2s;
       box-shadow: 0 2px 8px #2563eb20;
       display: inline-block;
+      max-width: 100%;
     }
     .cta:hover { background: var(--primary-dark); }
     .features {
@@ -181,6 +213,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       grid-template-columns: repeat(2, 1fr); /* 2 columns for 2x2 grid */
       gap: 1.5rem;
       margin: 2rem 0 0 0;
+      width: 100%;
+      box-sizing: border-box;
     }
     .feature-card {
       background: var(--card-bg);
@@ -195,6 +229,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       min-height: 120px;
       position: relative;
       transition: box-shadow 0.2s, border 0.2s;
+      width: 100%;
+      box-sizing: border-box;
     }
     .feature-card:hover {
       box-shadow: 0 4px 16px #2563eb22;
@@ -206,12 +242,17 @@ export function getLandingPageHtml(req: Request, res: Response): void {
     }
     .examples-section {
       margin-top: 2.5rem;
+      width: 100%;
+      box-sizing: border-box;
     }
     .examples-tabs {
       display: flex;
       gap: 0.5em;
       margin-bottom: 1.2em;
       border-bottom: 2px solid #e5e7eb;
+      width: 100%;
+      box-sizing: border-box;
+      min-width: 0;
     }
     .examples-tab {
       background: none;
@@ -223,6 +264,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       cursor: pointer;
       border-radius: 8px 8px 0 0;
       transition: color 0.2s, background 0.2s;
+      min-width: 0;
     }
     .examples-tab.active {
       color: var(--primary-dark);
@@ -239,12 +281,19 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       font-size: 0.98rem;
       position: relative;
       margin: 0.5em 0 0.5em 0;
+      width: 100%;
+      box-sizing: border-box;
+      max-width: 100vw;
     }
     code {
       font-family: 'Fira Mono', 'Consolas', monospace;
       font-size: 1em;
       background: none;
       color: #222;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      max-width: 100%;
+      display: block;
     }
     .copy-btn {
       position: absolute;
@@ -260,6 +309,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       opacity: 0.7;
       transition: opacity 0.2s, background 0.2s;
       z-index: 2;
+      min-width: 0;
     }
     .copy-btn:hover { opacity: 1; background: #c9d3e6; }
     .copy-btn.copied { color: #388e3c; background: #d0f5dd; opacity: 1; }
@@ -272,6 +322,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       text-align: center;
       color: var(--muted);
       font-size: 1.08em;
+      width: 100%;
+      box-sizing: border-box;
     }
     .more-info-footer ul {
       list-style: none;
@@ -281,6 +333,8 @@ export function getLandingPageHtml(req: Request, res: Response): void {
       flex-wrap: wrap;
       gap: 1.5em;
       justify-content: center;
+      width: 100%;
+      box-sizing: border-box;
     }
     .more-info-footer a {
       color: var(--primary-dark);
@@ -290,10 +344,60 @@ export function getLandingPageHtml(req: Request, res: Response): void {
     }
     .more-info-footer a:hover { color: var(--primary); }
     @media (max-width: 700px) {
-      .header-inner { flex-direction: column; align-items: flex-start; gap: 1.2em; }
+      .header-inner {
+        flex-direction: row;
+        align-items: center;
+        gap: 1.2em;
+        width: 100%;
+        flex-wrap: nowrap;
+      }
+      .header-title { flex-shrink: 1; min-width: 0; }
+      .github-btn { margin-left: auto; }
       .header-title h1 { font-size: 1.5rem; }
       main { padding: 1.2rem; }
       .hero { padding: 1.2rem 0.7rem 1.2rem 0.7rem; }
+      .features { grid-template-columns: 1fr; gap: 1.1rem; }
+      .feature-card { min-height: unset; font-size: 0.98em; }
+      .api-endpoint-box { padding: 1rem 0.7rem; font-size: 1em; }
+      .api-endpoint-url { font-size: 1em; }
+      .cta { padding: 0.8rem 1.5rem; font-size: 1rem; }
+      .examples-section { margin-top: 1.5rem; }
+      .examples-tabs { flex-wrap: wrap; gap: 0.2em; }
+      .examples-tab { font-size: 1em; padding: 0.5em 0.7em 0.4em 0.7em; }
+      pre { font-size: 0.92rem; padding: 0.8rem 0.5rem; }
+      .copy-btn { top: 6px; right: 6px; font-size: 0.9em; padding: 0.15em 0.5em; }
+      .api-endpoint-box > div[style*="font-size"] {
+        font-size: 0.95em !important;
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+    }
+    @media (max-width: 500px) {
+      .header-inner { padding: 1rem 0.5rem 1rem 0.5rem; }
+      .header-title h1 { font-size: 1.1rem; }
+      .header-title svg, .header-title img { height: 2.2rem !important; width: 2.2rem !important; }
+      main { padding: 0.5rem; }
+      .hero { padding: 0.7rem 0.2rem 0.7rem 0.2rem; }
+      .features { gap: 0.7rem; }
+      .feature-card { padding: 0.7rem 0.5rem; font-size: 0.92em; }
+      .api-endpoint-box { padding: 0.7rem 0.3rem; font-size: 0.95em; }
+      .api-endpoint-url { font-size: 0.95em; }
+      .cta { padding: 0.6rem 1rem; font-size: 0.95rem; }
+      .examples-section { margin-top: 1rem; }
+      .examples-tabs { gap: 0.1em; }
+      .examples-tab { font-size: 0.95em; padding: 0.4em 0.5em 0.3em 0.5em; }
+      pre { font-size: 0.88rem; padding: 0.6rem 0.2rem; }
+      .copy-btn { top: 4px; right: 4px; font-size: 0.85em; padding: 0.1em 0.3em; }
+      .more-info-footer { font-size: 0.98em; padding: 1rem 0.2rem 1rem 0.2rem; }
+      .api-endpoint-box > div[style*="font-size"] {
+        font-size: 0.88em !important;
+      }
+    }
+    /* Make code blocks and tabs horizontally scrollable on small screens */
+    @media (max-width: 700px) {
+      .examples-tabs { overflow-x: auto; }
+      pre { overflow-x: auto; }
     }
   </style>
   <!-- Prism.js for syntax highlighting -->
