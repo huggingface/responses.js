@@ -129,7 +129,7 @@ responses.js/
 - [x] Multi-turn conversation fixes for text messages + tool calls
 - [x] Correctly return "usage" field
 - [x] MCP support (non-streaming)
-- [] MCP support (streaming)
+- [ ] MCP support (streaming)
 - [ ] Tools execution (web search, file search, image generation, code interpreter)
 - [ ] Background mode support
 - [ ] Additional API routes (GET, DELETE, CANCEL, LIST responses)
