@@ -1,3 +1,15 @@
+---
+title: Responses.js
+emoji: 😻
+colorFrom: red
+colorTo: red
+sdk: docker
+pinned: false
+license: mit
+short_description: Check out https://github.com/huggingface/responses.js
+app_port: 3000
+---
+
 # responses.js
 
 A lightweight Express.js server that implements OpenAI's Responses API, built on top of Chat Completions and powered by Hugging Face Inference Providers.
