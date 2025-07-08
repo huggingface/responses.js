@@ -98,6 +98,24 @@ pnpm demo:dev
 
 The demo will be available at `http://localhost:3001`.
 
+## 🐳 Running with Docker
+
+You can run the server in a production-ready container using Docker.
+
+### Build the Docker image
+
+```bash
+docker build -t responses.js .
+```
+
+### Run the server
+
+```bash
+docker run -p 3000:3000 responses.js
+```
+
+The server will be available at `http://localhost:3000`.
+
 ## 📁 Project Structure
 
 ```
