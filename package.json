@@ -58,6 +58,7 @@
 	"dependencies": {
 		"@huggingface/inference": "^4.3.1",
 		"@huggingface/tasks": "^0.19.22",
+		"@modelcontextprotocol/sdk": "^1.15.0",
 		"express": "^4.21.2",
 		"openai": "^5.8.2",
 		"zod": "^3.25.71"

@@ -1,6 +1,6 @@
 import { type Response as ExpressResponse } from "express";
 import { type ValidatedRequest } from "../middleware/validation.js";
-import { type CreateResponseParams } from "../schemas.js";
+import type { CreateResponseParams, McpServerParams, McpApprovalRequestParams } from "../schemas.js";
 import { generateUniqueId } from "../lib/generateUniqueId.js";
 import { InferenceClient } from "@huggingface/inference";
 import type {
@@ -15,8 +15,13 @@ import type {
 	ResponseContentPartAddedEvent,
 	ResponseOutputMessage,
 	ResponseFunctionToolCall,
+	ResponseOutputItem,
 } from "openai/resources/responses/responses";
-import { ChatCompletionStreamOutputUsage } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
+import type {
+	ChatCompletionInputTool,
+	ChatCompletionStreamOutputUsage,
+} from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
+import { callMcpTool, connectMcpServer } from "../mcp.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -97,12 +102,130 @@ export const postCreateResponse = async (
 												})
 												.filter((item) => item !== undefined),
 							};
+						case "mcp_list_tools": {
+							// Hacky: will be dropped by filter
+							return {
+								role: "assistant",
+								name: "mcp_list_tools",
+								content: "",
+							};
+						}
+						case "mcp_approval_request": {
+							return {
+								role: "assistant",
+								name: "mcp_approval_request",
+								content: `MCP approval request (${item.id}). Server: '${item.server_label}'. Tool: '${item.name}'. Arguments: '${item.arguments}'.`,
+							};
+						}
+						case "mcp_approval_response": {
+							return {
+								role: "assistant",
+								name: "mcp_approval_response",
+								content: `MCP approval response (${item.id}). Approved: ${item.approve}. Reason: ${item.reason}.`,
+							};
+						}
 					}
 				})
 				.filter((message) => message.content?.length !== 0)
 		);
 	} else {
 		messages.push({ role: "user", content: req.body.input });
+	}
+
+	const output: ResponseOutputItem[] = [];
+	let tools: ChatCompletionInputTool[] | undefined = [];
+	const mcpToolsMapping: Record<string, McpServerParams> = {};
+	if (req.body.tools) {
+		await Promise.all(
+			req.body.tools.map(async (tool) => {
+				switch (tool.type) {
+					case "function":
+						tools?.push({
+							type: tool.type,
+							function: {
+								name: tool.name,
+								parameters: tool.parameters,
+								description: tool.description,
+								strict: tool.strict,
+							},
+						});
+						break;
+					case "mcp": {
+						let mcpListTools: ResponseOutputItem.McpListTools | undefined;
+
+						// If MCP list tools is already in the input, use it
+						if (Array.isArray(req.body.input)) {
+							for (const item of req.body.input) {
+								if (item.type === "mcp_list_tools" && item.server_label === tool.server_label) {
+									mcpListTools = item;
+									console.debug(`Using MCP list tools from input for server '${tool.server_label}'`);
+									break;
+								}
+							}
+						}
+						// Otherwise, list tools from MCP server
+						if (!mcpListTools) {
+							try {
+								const mcp = await connectMcpServer(tool);
+								console.debug("Listing MCP tools from server");
+								const mcpTools = await mcp.listTools();
+								console.debug(`Fetched ${mcpTools.tools.length} tools from MCP server '${tool.server_label}'`);
+
+								// All tools are returned in Response object
+								mcpListTools = {
+									id: generateUniqueId("mcp_list_tools"),
+									type: "mcp_list_tools",
+									server_label: tool.server_label,
+									tools: mcpTools.tools.map((mcpTool) => ({
+										input_schema: mcpTool.inputSchema,
+										name: mcpTool.name,
+										annotations: mcpTool.annotations,
+										description: mcpTool.description,
+									})),
+								};
+							} catch (error) {
+								console.error("Error listing tools from MCP server", error);
+								mcpListTools = {
+									id: generateUniqueId("mcp_list_tools"),
+									type: "mcp_list_tools",
+									server_label: tool.server_label,
+									tools: [],
+									error: `Failed to list tools from MCP server '${tool.server_label}': ${error instanceof Error ? error.message : "Unknown error"}`,
+								};
+							}
+							output.push(mcpListTools);
+						}
+
+						// Only allowed tools are forwarded to the LLM
+						const allowedTools = tool.allowed_tools
+							? Array.isArray(tool.allowed_tools)
+								? tool.allowed_tools
+								: tool.allowed_tools.tool_names
+							: [];
+						if (mcpListTools?.tools) {
+							for (const mcpTool of mcpListTools.tools) {
+								if (allowedTools.length === 0 || allowedTools.includes(mcpTool.name)) {
+									tools?.push({
+										type: "function" as const,
+										function: {
+											name: mcpTool.name,
+											parameters: mcpTool.input_schema,
+											description: mcpTool.description ?? undefined,
+										},
+									});
+								}
+								mcpToolsMapping[mcpTool.name] = tool;
+							}
+							break;
+						}
+					}
+				}
+			})
+		);
+	}
+
+	if (tools.length === 0) {
+		tools = undefined;
 	}
 
 	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
@@ -142,17 +265,7 @@ export const postCreateResponse = async (
 							},
 						}
 					: undefined,
-		tools: req.body.tools
-			? req.body.tools.map((tool) => ({
-					type: tool.type,
-					function: {
-						name: tool.name,
-						parameters: tool.parameters,
-						description: tool.description,
-						strict: tool.strict,
-					},
-				}))
-			: undefined,
+		tools,
 		top_p: req.body.top_p,
 	};
 
@@ -165,7 +278,7 @@ export const postCreateResponse = async (
 		metadata: req.body.metadata,
 		model: req.body.model,
 		object: "response",
-		output: [],
+		output,
 		// parallel_tool_calls: req.body.parallel_tool_calls,
 		status: "in_progress",
 		text: req.body.text,
@@ -173,8 +286,48 @@ export const postCreateResponse = async (
 		tools: req.body.tools ?? [],
 		temperature: req.body.temperature,
 		top_p: req.body.top_p,
+		usage: {
+			input_tokens: 0,
+			input_tokens_details: { cached_tokens: 0 },
+			output_tokens: 0,
+			output_tokens_details: { reasoning_tokens: 0 },
+			total_tokens: 0,
+		},
 	};
 
+	// MCP approval requests => do not call LLM at all
+	if (Array.isArray(req.body.input)) {
+		for (const item of req.body.input) {
+			// Note: currently supporting only 1 mcp_approval_response per request
+			if (item.type === "mcp_approval_response" && item.approve) {
+				const approvalRequest = req.body.input.find(
+					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
+				) as McpApprovalRequestParams | undefined;
+				console.log("approvalRequest", approvalRequest);
+				if (approvalRequest) {
+					const toolParams = mcpToolsMapping[approvalRequest.name];
+					responseObject.output.push(
+						await callMcpTool(toolParams, approvalRequest.name, toolParams.server_label, approvalRequest.arguments)
+					);
+					responseObject.status = "completed";
+					res.json(responseObject);
+					return;
+				} else {
+					responseObject.status = "failed";
+					const errorMessage = `MCP approval response for approval request '${item.approval_request_id}' not found`;
+					console.error(errorMessage);
+					responseObject.error = {
+						code: "server_error",
+						message: errorMessage,
+					};
+					res.json(responseObject);
+					return;
+				}
+			}
+		}
+	}
+
+	// Streaming mode
 	if (req.body.stream) {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Connection", "keep-alive");
@@ -420,32 +573,73 @@ export const postCreateResponse = async (
 		const chatCompletionResponse = await client.chatCompletion(payload);
 
 		responseObject.status = "completed";
-		responseObject.output = chatCompletionResponse.choices[0].message.content
-			? [
-					{
-						id: generateUniqueId("msg"),
-						type: "message",
-						role: "assistant",
-						status: "completed",
-						content: [
-							{
-								type: "output_text",
-								text: chatCompletionResponse.choices[0].message.content,
-								annotations: [],
-							},
-						],
-					},
-				]
-			: chatCompletionResponse.choices[0].message.tool_calls
-				? chatCompletionResponse.choices[0].message.tool_calls.map((toolCall) => ({
-						type: "function_call",
-						id: generateUniqueId("fc"),
-						call_id: toolCall.id,
-						name: toolCall.function.name,
-						arguments: toolCall.function.arguments,
-						status: "completed",
-					}))
-				: [];
+		for (const choice of chatCompletionResponse.choices) {
+			if (choice.message.content) {
+				responseObject.output.push({
+					id: generateUniqueId("msg"),
+					type: "message",
+					role: "assistant",
+					status: "completed",
+					content: [
+						{
+							type: "output_text",
+							text: choice.message.content,
+							annotations: [],
+						},
+					],
+				});
+			}
+			if (choice.message.tool_calls) {
+				for (const toolCall of choice.message.tool_calls) {
+					if (toolCall.function.name in mcpToolsMapping) {
+						const toolParams = mcpToolsMapping[toolCall.function.name];
+
+						// Check if approval is required
+						const approvalRequired =
+							toolParams.require_approval === "always"
+								? true
+								: toolParams.require_approval === "never"
+									? false
+									: toolParams.require_approval.always?.tool_names?.includes(toolCall.function.name)
+										? true
+										: toolParams.require_approval.never?.tool_names?.includes(toolCall.function.name)
+											? false
+											: true; // behavior is undefined in specs, let's default to
+
+						if (approvalRequired) {
+							// TODO: Implement approval logic
+							console.log(`Requesting approval for MCP tool '${toolCall.function.name}'`);
+							responseObject.output.push({
+								type: "mcp_approval_request",
+								id: generateUniqueId("mcp_approval_request"),
+								name: toolCall.function.name,
+								server_label: toolParams.server_label,
+								arguments: toolCall.function.arguments,
+							});
+						} else {
+							responseObject.output.push(
+								await callMcpTool(
+									toolParams,
+									toolCall.function.name,
+									toolParams.server_label,
+									toolCall.function.arguments
+								)
+							);
+						}
+					} else {
+						responseObject.output.push({
+							type: "function_call",
+							id: generateUniqueId("fc"),
+							call_id: toolCall.id,
+							name: toolCall.function.name,
+							arguments: toolCall.function.arguments,
+							status: "completed",
+						});
+					}
+				}
+			}
+		}
+
 		responseObject.usage = {
 			input_tokens: chatCompletionResponse.usage.prompt_tokens,
 			input_tokens_details: { cached_tokens: 0 },

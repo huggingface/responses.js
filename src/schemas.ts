@@ -26,6 +26,46 @@ const inputContentSchema = z.array(
 	])
 );
 
+const mcpServerParamsSchema = z.object({
+	server_label: z.string(),
+	server_url: z.string(),
+	type: z.literal("mcp"),
+	allowed_tools: z
+		.union([
+			z.array(z.string()),
+			z.object({
+				tool_names: z.array(z.string()),
+			}),
+		])
+		.nullable()
+		.default(null),
+	headers: z.record(z.string()).nullable().default(null),
+	require_approval: z
+		.union([
+			z.enum(["always", "never"]),
+			z.object({
+				always: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
+				never: z.object({ tool_names: z.array(z.string()).optional() }).optional(),
+			}),
+		])
+		.default("always"),
+});
+
+const mcpApprovalRequestParamsSchema = z.object({
+	type: z.literal("mcp_approval_request"),
+	id: z.string(),
+	server_label: z.string(),
+	name: z.string(),
+	arguments: z.string(),
+});
+const mcpApprovalResponseParamsSchema = z.object({
+	type: z.literal("mcp_approval_response"),
+	id: z.string().optional(),
+	approval_request_id: z.string(),
+	approve: z.boolean(),
+	reason: z.string().optional(),
+});
+
 export const createResponseParamsSchema = z.object({
 	// background: z.boolean().default(false),
 	// include:
@@ -80,10 +120,22 @@ export const createResponseParamsSchema = z.object({
 					id: z.string().optional(),
 					status: z.enum(["in_progress", "completed", "incomplete"]),
 				}),
-				// z.object({
-				// 	id: z.string(),
-				// 	type: z.enum(["item_reference"]).default("item_reference"),
-				// }),
+				z.object({
+					type: z.literal("mcp_list_tools"),
+					id: z.string(),
+					server_label: z.string(),
+					tools: z.array(
+						z.object({
+							name: z.string(),
+							input_schema: z.record(z.any()),
+							description: z.string().nullable().optional(),
+							annotations: z.object({}).optional(),
+						})
+					),
+					error: z.string().nullable().optional(),
+				}),
+				mcpApprovalRequestParamsSchema,
+				mcpApprovalResponseParamsSchema,
 			])
 		),
 	]),
@@ -141,13 +193,16 @@ export const createResponseParamsSchema = z.object({
 		.optional(),
 	tools: z
 		.array(
-			z.object({
-				name: z.string(),
-				parameters: z.record(z.any()),
-				strict: z.boolean().default(true),
-				type: z.enum(["function"]),
-				description: z.string().optional(),
-			})
+			z.union([
+				z.object({
+					name: z.string(),
+					parameters: z.record(z.any()),
+					strict: z.boolean().default(true),
+					type: z.enum(["function"]),
+					description: z.string().optional(),
+				}),
+				mcpServerParamsSchema,
+			])
 		)
 		.optional(),
 	// top_logprobs: z.number().min(0).max(20).nullable().default(null),
@@ -157,3 +212,6 @@ export const createResponseParamsSchema = z.object({
 });
 
 export type CreateResponseParams = z.infer<typeof createResponseParamsSchema>;
+export type McpServerParams = z.infer<typeof mcpServerParamsSchema>;
+export type McpApprovalRequestParams = z.infer<typeof mcpApprovalRequestParamsSchema>;
+export type McpApprovalResponseParams = z.infer<typeof mcpApprovalResponseParamsSchema>;
