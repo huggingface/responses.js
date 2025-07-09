@@ -50,89 +50,12 @@ export const postCreateResponse = async (
 	} else {
 		console.debug("Non-stream request");
 		for await (const event of events) {
-			if (event.type === "response.completed") {
-				console.debug("Response completed");
+			if (event.type === "response.completed" || event.type === "response.failed") {
+				console.debug(event.type);
 				res.json(event.response);
-			} else if (event.type === "response.failed") {
-				console.debug("Response failed");
-				res.status(500).json({
-					success: false,
-					error: event.response.error?.message,
-				});
 			}
 		}
 	}
-
-	// try {
-	// 	const chatCompletionResponse = await client.chatCompletion(payload);
-
-	// 	responseObject.status = "completed";
-	// 	for (const choice of chatCompletionResponse.choices) {
-	// 		if (choice.message.content) {
-	// 			responseObject.output.push({
-	// 				id: generateUniqueId("msg"),
-	// 				type: "message",
-	// 				role: "assistant",
-	// 				status: "completed",
-	// 				content: [
-	// 					{
-	// 						type: "output_text",
-	// 						text: choice.message.content,
-	// 						annotations: [],
-	// 					},
-	// 				],
-	// 			});
-	// 		}
-	// 		if (choice.message.tool_calls) {
-	// 			for (const toolCall of choice.message.tool_calls) {
-	// 				if (toolCall.function.name in mcpToolsMapping) {
-	// 					const toolParams = mcpToolsMapping[toolCall.function.name];
-
-	// 					// Check if approval is required
-	// 					const approvalRequired =
-	// 						toolParams.require_approval === "always"
-	// 							? true
-	// 							: toolParams.require_approval === "never"
-	// 								? false
-	// 								: toolParams.require_approval.always?.tool_names?.includes(toolCall.function.name)
-	// 									? true
-	// 									: toolParams.require_approval.never?.tool_names?.includes(toolCall.function.name)
-	// 										? false
-	// 										: true; // behavior is undefined in specs, let's default to
-
-	// 					if (approvalRequired) {
-	// 						// TODO: Implement approval logic
-	// 						console.log(`Requesting approval for MCP tool '${toolCall.function.name}'`);
-	// 						responseObject.output.push({
-	// 							type: "mcp_approval_request",
-	// 							id: generateUniqueId("mcp_approval_request"),
-	// 							name: toolCall.function.name,
-	// 							server_label: toolParams.server_label,
-	// 							arguments: toolCall.function.arguments,
-	// 						});
-	// 					} else {
-	// 						responseObject.output.push(
-	// 							await callMcpTool(
-	// 								toolParams,
-	// 								toolCall.function.name,
-	// 								toolParams.server_label,
-	// 								toolCall.function.arguments
-	// 							)
-	// 						);
-	// 					}
-	// 				} else {
-	// 					responseObject.output.push({
-	// 						type: "function_call",
-	// 						id: generateUniqueId("fc"),
-	// 						call_id: toolCall.id,
-	// 						name: toolCall.function.name,
-	// 						arguments: toolCall.function.arguments,
-	// 						status: "completed",
-	// 					});
-	// 				}
-	// 			}
-	// 		}
-	// 	}
 };
 
 /*
@@ -270,8 +193,8 @@ async function* innerRunStream(
 						for await (const event of listMcpToolsStream(tool, responseObject)) {
 							yield event;
 						}
+						mcpListTools = responseObject.output.at(-1) as ResponseOutputItem.McpListTools;
 					}
-					mcpListTools = responseObject.output.at(-1) as ResponseOutputItem.McpListTools;
 
 					// Only allowed tools are forwarded to the LLM
 					const allowedTools = tool.allowed_tools
@@ -463,7 +386,12 @@ async function* innerRunStream(
 	};
 
 	// Call LLM
-	for await (const event of callChatCompletionStream(apiKey, payload, responseObject, mcpToolsMapping)) {
+	for await (const event of callLLMStream(apiKey, payload, responseObject, mcpToolsMapping)) {
+		yield event;
+	}
+
+	// Handle MCP tool calls if any
+	for await (const event of handleMCPToolCallsAfterLLM(responseObject, mcpToolsMapping)) {
 		yield event;
 	}
 }
@@ -509,7 +437,7 @@ async function* listMcpToolsStream(
 /*
  * Call LLM and stream the response.
  */
-async function* callChatCompletionStream(
+async function* callLLMStream(
 	apiKey: string | undefined,
 	payload: ChatCompletionInput,
 	responseObject: IncompleteResponse,
@@ -727,7 +655,7 @@ async function* callApprovedMCPToolStream(
 	responseObject: IncompleteResponse
 ): AsyncGenerator<ResponseStreamEvent> {
 	if (!approvalRequest) {
-		throw new Error(`MCP approval request for approval request '${approval_request_id}' not found`);
+		throw new Error(`MCP approval request '${approval_request_id}' not found`);
 	}
 
 	const outputObject: ResponseOutputItem.McpCall = {
@@ -777,4 +705,69 @@ async function* callApprovedMCPToolStream(
 		item: outputObject,
 		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 	};
+}
+
+async function* handleMCPToolCallsAfterLLM(
+	responseObject: IncompleteResponse,
+	mcpToolsMapping: Record<string, McpServerParams>
+): AsyncGenerator<ResponseStreamEvent> {
+	for (let output_index = 0; output_index < responseObject.output.length; output_index++) {
+		const outputItem = responseObject.output[output_index];
+		if (outputItem.type === "mcp_call") {
+			const toolCall = outputItem as ResponseOutputItem.McpCall;
+			const toolParams = mcpToolsMapping[toolCall.name];
+			if (toolParams) {
+				const approvalRequired =
+					toolParams.require_approval === "always"
+						? true
+						: toolParams.require_approval === "never"
+							? false
+							: toolParams.require_approval.always?.tool_names?.includes(toolCall.name)
+								? true
+								: toolParams.require_approval.never?.tool_names?.includes(toolCall.name)
+									? false
+									: true; // behavior is undefined in specs, let's default to
+
+				if (approvalRequired) {
+					const approvalRequest: ResponseOutputItem.McpApprovalRequest = {
+						type: "mcp_approval_request",
+						id: generateUniqueId("mcp_approval_request"),
+						name: toolCall.name,
+						server_label: toolParams.server_label,
+						arguments: toolCall.arguments,
+					};
+					responseObject.output.push(approvalRequest);
+					yield {
+						type: "response.output_item.added",
+						output_index: responseObject.output.length,
+						item: approvalRequest,
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+					};
+				} else {
+					responseObject.output.push;
+					yield {
+						type: "response.mcp_call.in_progress",
+						item_id: toolCall.id,
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+						output_index,
+					};
+					const toolResult = await callMcpTool(toolParams, toolCall.name, toolCall.arguments);
+					if (toolResult.error) {
+						toolCall.error = toolResult.error;
+						yield {
+							type: "response.mcp_call.failed",
+							sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+						};
+						throw new Error(toolCall.error);
+					} else {
+						toolCall.output = toolResult.output;
+						yield {
+							type: "response.mcp_call.completed",
+							sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+						};
+					}
+				}
+			}
+		}
+	}
 }
