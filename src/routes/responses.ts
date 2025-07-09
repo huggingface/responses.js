@@ -324,6 +324,13 @@ async function* innerRunStream(
 								content: "",
 							};
 						}
+						case "mcp_call": {
+							return {
+								role: "assistant",
+								name: "mcp_call",
+								content: `MCP call (${item.id}). Server: '${item.server_label}'. Tool: '${item.name}'. Arguments: '${item.arguments}'.`,
+							};
+						}
 						case "mcp_approval_request": {
 							return {
 								role: "assistant",
