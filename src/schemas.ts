@@ -60,10 +60,17 @@ const mcpApprovalRequestParamsSchema = z.object({
 });
 const mcpApprovalResponseParamsSchema = z.object({
 	type: z.literal("mcp_approval_response"),
-	id: z.string().optional(),
+	id: z.string().nullable().default(null),
 	approval_request_id: z.string(),
 	approve: z.boolean(),
-	reason: z.string().optional(),
+	reason: z.string().nullable().default(null),
+});
+const mcpCallParamsSchema = z.object({
+	type: z.literal("mcp_call"),
+	id: z.string(),
+	name: z.string(),
+	server_label: z.string(),
+	arguments: z.string(),
 });
 
 export const createResponseParamsSchema = z.object({
@@ -136,6 +143,7 @@ export const createResponseParamsSchema = z.object({
 				}),
 				mcpApprovalRequestParamsSchema,
 				mcpApprovalResponseParamsSchema,
+				mcpCallParamsSchema,
 			])
 		),
 	]),
@@ -215,3 +223,4 @@ export type CreateResponseParams = z.infer<typeof createResponseParamsSchema>;
 export type McpServerParams = z.infer<typeof mcpServerParamsSchema>;
 export type McpApprovalRequestParams = z.infer<typeof mcpApprovalRequestParamsSchema>;
 export type McpApprovalResponseParams = z.infer<typeof mcpApprovalResponseParamsSchema>;
+export type McpCallParams = z.infer<typeof mcpCallParamsSchema>;
