@@ -6,8 +6,6 @@ import { URL } from "url";
 
 import type { McpServerParams } from "./schemas";
 import { McpResultFormatter } from "./lib/McpResultFormatter";
-import { generateUniqueId } from "./lib/generateUniqueId";
-import type { ResponseOutputItem } from "openai/resources/responses/responses";
 
 export async function connectMcpServer(mcpServer: McpServerParams): Promise<Client> {
 	const mcp = new Client({ name: "@huggingface/responses.js", version: packageVersion });
@@ -37,9 +35,8 @@ export async function connectMcpServer(mcpServer: McpServerParams): Promise<Clie
 export async function callMcpTool(
 	mcpServer: McpServerParams,
 	toolName: string,
-	server_label: string,
 	argumentsString: string
-): Promise<ResponseOutputItem> {
+): Promise<{ error: string; output?: undefined } | { error?: undefined; output: string }> {
 	try {
 		const client = await connectMcpServer(mcpServer);
 		const toolArgs: Record<string, unknown> = argumentsString === "" ? {} : JSON.parse(argumentsString);
@@ -47,22 +44,12 @@ export async function callMcpTool(
 		const toolResponse = await client.callTool({ name: toolName, arguments: toolArgs });
 		const formattedResult = McpResultFormatter.format(toolResponse);
 		return {
-			type: "mcp_call",
-			id: generateUniqueId("mcp_call"),
-			name: toolName,
-			server_label: server_label,
-			arguments: argumentsString,
 			output: formattedResult,
 		};
 	} catch (error) {
 		const errorMessage =
 			error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error);
 		return {
-			type: "mcp_call",
-			id: generateUniqueId("mcp_call"),
-			name: toolName,
-			server_label: server_label,
-			arguments: argumentsString,
 			error: errorMessage,
 		};
 	}

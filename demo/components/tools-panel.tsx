@@ -53,14 +53,14 @@ export default function ContextPanel() {
 				>
 					<FunctionsView />
 				</PanelConfig>
-				{/* <PanelConfig
+				<PanelConfig
 					title="MCP"
 					tooltip="Allows to call tools via remote MCP server"
 					enabled={mcpEnabled}
 					setEnabled={setMcpEnabled}
 				>
 					<McpConfig />
-				</PanelConfig> */}
+				</PanelConfig>
 			</div>
 		</div>
 	);
