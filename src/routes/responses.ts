@@ -17,10 +17,7 @@ import type {
 	ResponseFunctionToolCall,
 	ResponseOutputItem,
 } from "openai/resources/responses/responses";
-import type {
-	ChatCompletionInputTool,
-	ChatCompletionStreamOutputUsage,
-} from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
+import type { ChatCompletionInputTool } from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
 import { callMcpTool, connectMcpServer } from "../mcp.js";
 
 class StreamingError extends Error {
@@ -30,12 +27,14 @@ class StreamingError extends Error {
 	}
 }
 
+type IncompleteResponse = Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls">;
+
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
 ): Promise<void> => {
+	// Retrieve API key from headers
 	const apiKey = req.headers.authorization?.split(" ")[1];
-
 	if (!apiKey) {
 		res.status(401).json({
 			success: false,
@@ -44,11 +43,14 @@ export const postCreateResponse = async (
 		return;
 	}
 
-	const client = new InferenceClient(apiKey);
+	// Resolve model and provider
+	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
+	const provider = req.body.model.includes("@") ? req.body.model.split("@")[0] : undefined;
+
+	// Format input to Chat Completion format
 	const messages: ChatCompletionInputMessage[] = req.body.instructions
 		? [{ role: "system", content: req.body.instructions }]
 		: [];
-
 	if (Array.isArray(req.body.input)) {
 		messages.push(
 			...req.body.input
@@ -103,7 +105,7 @@ export const postCreateResponse = async (
 												.filter((item) => item !== undefined),
 							};
 						case "mcp_list_tools": {
-							// Hacky: will be dropped by filter
+							// Hacky: will be dropped by filter since tools are passed as separate objects
 							return {
 								role: "assistant",
 								name: "mcp_list_tools",
@@ -135,6 +137,9 @@ export const postCreateResponse = async (
 	const output: ResponseOutputItem[] = [];
 	let tools: ChatCompletionInputTool[] | undefined = [];
 	const mcpToolsMapping: Record<string, McpServerParams> = {};
+
+	// Format tools to Chat Completion format
+	// If MCP tool, list tools from MCP server
 	if (req.body.tools) {
 		await Promise.all(
 			req.body.tools.map(async (tool) => {
@@ -223,14 +228,57 @@ export const postCreateResponse = async (
 			})
 		);
 	}
-
 	if (tools.length === 0) {
 		tools = undefined;
 	}
 
-	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
-	const provider = req.body.model.includes("@") ? req.body.model.split("@")[0] : undefined;
+	// Prepare response object that will be iteratively populated
+	const responseObject: IncompleteResponse = {
+		created_at: Math.floor(new Date().getTime() / 1000),
+		error: null,
+		id: generateUniqueId("resp"),
+		instructions: req.body.instructions,
+		max_output_tokens: req.body.max_output_tokens,
+		metadata: req.body.metadata,
+		model: req.body.model,
+		object: "response",
+		output,
+		// parallel_tool_calls: req.body.parallel_tool_calls,
+		status: "in_progress",
+		text: req.body.text,
+		tool_choice: req.body.tool_choice ?? "auto",
+		tools: req.body.tools ?? [],
+		temperature: req.body.temperature,
+		top_p: req.body.top_p,
+		usage: {
+			input_tokens: 0,
+			input_tokens_details: { cached_tokens: 0 },
+			output_tokens: 0,
+			output_tokens_details: { reasoning_tokens: 0 },
+			total_tokens: 0,
+		},
+	};
 
+	// If MCP approval requests => do not call LLM at all
+	if (Array.isArray(req.body.input)) {
+		for (const item of req.body.input) {
+			// Note: currently supporting only 1 mcp_approval_response per request
+			if (item.type === "mcp_approval_response" && item.approve) {
+				const approvalRequest = req.body.input.find(
+					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
+				) as McpApprovalRequestParams | undefined;
+				const events = callApprovedMCPToolStream(
+					item.approval_request_id,
+					approvalRequest,
+					mcpToolsMapping,
+					responseObject
+				);
+				return await returnFromStream(events, res, req.body.stream);
+			}
+		}
+	}
+
+	// Prepare payload for the LLM
 	const payload: ChatCompletionInput = {
 		// main params
 		model: model,
@@ -269,391 +317,491 @@ export const postCreateResponse = async (
 		top_p: req.body.top_p,
 	};
 
-	const responseObject: Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls"> = {
-		created_at: Math.floor(new Date().getTime() / 1000),
-		error: null,
-		id: generateUniqueId("resp"),
-		instructions: req.body.instructions,
-		max_output_tokens: req.body.max_output_tokens,
-		metadata: req.body.metadata,
-		model: req.body.model,
-		object: "response",
-		output,
-		// parallel_tool_calls: req.body.parallel_tool_calls,
-		status: "in_progress",
-		text: req.body.text,
-		tool_choice: req.body.tool_choice ?? "auto",
-		tools: req.body.tools ?? [],
-		temperature: req.body.temperature,
-		top_p: req.body.top_p,
-		usage: {
-			input_tokens: 0,
-			input_tokens_details: { cached_tokens: 0 },
-			output_tokens: 0,
-			output_tokens_details: { reasoning_tokens: 0 },
-			total_tokens: 0,
-		},
-	};
+	// Call LLM
+	const events = callChatCompletionStream(apiKey, payload, responseObject, mcpToolsMapping);
+	return await returnFromStream(events, res, req.body.stream);
 
-	// MCP approval requests => do not call LLM at all
-	if (Array.isArray(req.body.input)) {
-		for (const item of req.body.input) {
-			// Note: currently supporting only 1 mcp_approval_response per request
-			if (item.type === "mcp_approval_response" && item.approve) {
-				const approvalRequest = req.body.input.find(
-					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
-				) as McpApprovalRequestParams | undefined;
-				console.log("approvalRequest", approvalRequest);
-				if (approvalRequest) {
-					const toolParams = mcpToolsMapping[approvalRequest.name];
-					responseObject.output.push(
-						await callMcpTool(toolParams, approvalRequest.name, toolParams.server_label, approvalRequest.arguments)
-					);
-					responseObject.status = "completed";
-					res.json(responseObject);
-					return;
-				} else {
-					responseObject.status = "failed";
-					const errorMessage = `MCP approval response for approval request '${item.approval_request_id}' not found`;
-					console.error(errorMessage);
-					responseObject.error = {
-						code: "server_error",
-						message: errorMessage,
-					};
-					res.json(responseObject);
-					return;
-				}
-			}
-		}
-	}
+	// try {
+	// 	const chatCompletionResponse = await client.chatCompletion(payload);
 
-	// Streaming mode
-	if (req.body.stream) {
+	// 	responseObject.status = "completed";
+	// 	for (const choice of chatCompletionResponse.choices) {
+	// 		if (choice.message.content) {
+	// 			responseObject.output.push({
+	// 				id: generateUniqueId("msg"),
+	// 				type: "message",
+	// 				role: "assistant",
+	// 				status: "completed",
+	// 				content: [
+	// 					{
+	// 						type: "output_text",
+	// 						text: choice.message.content,
+	// 						annotations: [],
+	// 					},
+	// 				],
+	// 			});
+	// 		}
+	// 		if (choice.message.tool_calls) {
+	// 			for (const toolCall of choice.message.tool_calls) {
+	// 				if (toolCall.function.name in mcpToolsMapping) {
+	// 					const toolParams = mcpToolsMapping[toolCall.function.name];
+
+	// 					// Check if approval is required
+	// 					const approvalRequired =
+	// 						toolParams.require_approval === "always"
+	// 							? true
+	// 							: toolParams.require_approval === "never"
+	// 								? false
+	// 								: toolParams.require_approval.always?.tool_names?.includes(toolCall.function.name)
+	// 									? true
+	// 									: toolParams.require_approval.never?.tool_names?.includes(toolCall.function.name)
+	// 										? false
+	// 										: true; // behavior is undefined in specs, let's default to
+
+	// 					if (approvalRequired) {
+	// 						// TODO: Implement approval logic
+	// 						console.log(`Requesting approval for MCP tool '${toolCall.function.name}'`);
+	// 						responseObject.output.push({
+	// 							type: "mcp_approval_request",
+	// 							id: generateUniqueId("mcp_approval_request"),
+	// 							name: toolCall.function.name,
+	// 							server_label: toolParams.server_label,
+	// 							arguments: toolCall.function.arguments,
+	// 						});
+	// 					} else {
+	// 						responseObject.output.push(
+	// 							await callMcpTool(
+	// 								toolParams,
+	// 								toolCall.function.name,
+	// 								toolParams.server_label,
+	// 								toolCall.function.arguments
+	// 							)
+	// 						);
+	// 					}
+	// 				} else {
+	// 					responseObject.output.push({
+	// 						type: "function_call",
+	// 						id: generateUniqueId("fc"),
+	// 						call_id: toolCall.id,
+	// 						name: toolCall.function.name,
+	// 						arguments: toolCall.function.arguments,
+	// 						status: "completed",
+	// 					});
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+};
+
+/*
+ * Returns response in correct format depending on stream flag.
+ *
+ * If stream is true, returns response as event-stream.
+ * If stream is false, returns response as JSON.
+ */
+async function returnFromStream(events: AsyncGenerator<ResponseStreamEvent>, res: ExpressResponse, stream: boolean) {
+	if (stream) {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Connection", "keep-alive");
-		let sequenceNumber = 0;
-
-		// Emit events in sequence
-		const emitEvent = (event: ResponseStreamEvent) => {
+		for await (const event of events) {
 			res.write(`data: ${JSON.stringify(event)}\n\n`);
-		};
-
-		try {
-			// Response created event
-			emitEvent({
-				type: "response.created",
-				response: responseObject as Response,
-				sequence_number: sequenceNumber++,
-			});
-
-			// Response in progress event
-			emitEvent({
-				type: "response.in_progress",
-				response: responseObject as Response,
-				sequence_number: sequenceNumber++,
-			});
-
-			const stream = client.chatCompletionStream(payload);
-			let usage: ChatCompletionStreamOutputUsage | undefined;
-
-			for await (const chunk of stream) {
-				if (chunk.usage) {
-					usage = chunk.usage;
-				}
-
-				if (chunk.choices[0].delta.content) {
-					if (responseObject.output.length === 0) {
-						const outputObject: ResponseOutputMessage = {
-							id: generateUniqueId("msg"),
-							type: "message",
-							role: "assistant",
-							status: "in_progress",
-							content: [],
-						};
-						responseObject.output = [outputObject];
-
-						// Response output item added event
-						emitEvent({
-							type: "response.output_item.added",
-							output_index: 0,
-							item: outputObject,
-							sequence_number: sequenceNumber++,
-						});
-					}
-
-					const outputObject = responseObject.output.at(-1);
-					if (!outputObject || outputObject.type !== "message") {
-						throw new StreamingError("Not implemented: only single output item type is supported in streaming mode.");
-					}
-
-					if (outputObject.content.length === 0) {
-						// Response content part added event
-						const contentPart: ResponseContentPartAddedEvent["part"] = {
-							type: "output_text",
-							text: "",
-							annotations: [],
-						};
-						outputObject.content.push(contentPart);
-
-						emitEvent({
-							type: "response.content_part.added",
-							item_id: outputObject.id,
-							output_index: 0,
-							content_index: 0,
-							part: contentPart,
-							sequence_number: sequenceNumber++,
-						});
-					}
-
-					const contentPart = outputObject.content.at(-1);
-					if (!contentPart || contentPart.type !== "output_text") {
-						throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
-					}
-
-					// Add text delta
-					contentPart.text += chunk.choices[0].delta.content;
-					emitEvent({
-						type: "response.output_text.delta",
-						item_id: outputObject.id,
-						output_index: 0,
-						content_index: 0,
-						delta: chunk.choices[0].delta.content,
-						sequence_number: sequenceNumber++,
-					});
-				} else if (chunk.choices[0].delta.tool_calls && chunk.choices[0].delta.tool_calls.length > 0) {
-					if (chunk.choices[0].delta.tool_calls.length > 1) {
-						throw new StreamingError("Not implemented: only single tool call is supported in streaming mode.");
-					}
-
-					if (responseObject.output.length === 0) {
-						if (!chunk.choices[0].delta.tool_calls[0].function.name) {
-							throw new StreamingError("Tool call function name is required.");
-						}
-
-						const outputObject: ResponseFunctionToolCall = {
-							type: "function_call",
-							id: generateUniqueId("fc"),
-							call_id: chunk.choices[0].delta.tool_calls[0].id,
-							name: chunk.choices[0].delta.tool_calls[0].function.name,
-							arguments: "",
-						};
-						responseObject.output = [outputObject];
-
-						// Response output item added event
-						emitEvent({
-							type: "response.output_item.added",
-							output_index: 0,
-							item: outputObject,
-							sequence_number: sequenceNumber++,
-						});
-					}
-
-					const outputObject = responseObject.output.at(-1);
-					if (!outputObject || !outputObject.id || outputObject.type !== "function_call") {
-						throw new StreamingError("Not implemented: can only support single output item type in streaming mode.");
-					}
-
-					outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
-					emitEvent({
-						type: "response.function_call_arguments.delta",
-						item_id: outputObject.id,
-						output_index: 0,
-						delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
-						sequence_number: sequenceNumber++,
-					});
-				}
-			}
-
-			const lastOutputItem = responseObject.output.at(-1);
-
-			if (lastOutputItem) {
-				if (lastOutputItem?.type === "message") {
-					const contentPart = lastOutputItem.content.at(-1);
-					if (contentPart?.type === "output_text") {
-						emitEvent({
-							type: "response.output_text.done",
-							item_id: lastOutputItem.id,
-							output_index: responseObject.output.length - 1,
-							content_index: lastOutputItem.content.length - 1,
-							text: contentPart.text,
-							sequence_number: sequenceNumber++,
-						});
-
-						emitEvent({
-							type: "response.content_part.done",
-							item_id: lastOutputItem.id,
-							output_index: responseObject.output.length - 1,
-							content_index: lastOutputItem.content.length - 1,
-							part: contentPart,
-							sequence_number: sequenceNumber++,
-						});
-					} else {
-						throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
-					}
-
-					// Response output item done event
-					lastOutputItem.status = "completed";
-					emitEvent({
-						type: "response.output_item.done",
-						output_index: responseObject.output.length - 1,
-						item: lastOutputItem,
-						sequence_number: sequenceNumber++,
-					});
-				} else if (lastOutputItem?.type === "function_call") {
-					if (!lastOutputItem.id) {
-						throw new StreamingError("Function call id is required.");
-					}
-
-					emitEvent({
-						type: "response.function_call_arguments.done",
-						item_id: lastOutputItem.id,
-						output_index: responseObject.output.length - 1,
-						arguments: lastOutputItem.arguments,
-						sequence_number: sequenceNumber++,
-					});
-
-					lastOutputItem.status = "completed";
-					emitEvent({
-						type: "response.output_item.done",
-						output_index: responseObject.output.length - 1,
-						item: lastOutputItem,
-						sequence_number: sequenceNumber++,
-					});
-				} else {
-					throw new StreamingError("Not implemented: only message output is supported in streaming mode.");
-				}
-			}
-
-			// Response completed event
-			responseObject.status = "completed";
-			if (usage) {
-				responseObject.usage = {
-					input_tokens: usage.prompt_tokens,
-					input_tokens_details: { cached_tokens: 0 },
-					output_tokens: usage.completion_tokens,
-					output_tokens_details: { reasoning_tokens: 0 },
-					total_tokens: usage.total_tokens,
-				};
-			}
-			emitEvent({
-				type: "response.completed",
-				response: responseObject as Response,
-				sequence_number: sequenceNumber++,
-			});
-		} catch (streamError) {
-			console.error("Error in streaming chat completion:", streamError);
-
-			let message = "An error occurred while streaming from inference server.";
-			if (streamError instanceof StreamingError) {
-				message = streamError.message;
-			} else if (
-				typeof streamError === "object" &&
-				streamError &&
-				"message" in streamError &&
-				typeof streamError.message === "string"
-			) {
-				message = streamError.message;
-			}
-			responseObject.status = "failed";
-			responseObject.error = {
-				code: "server_error",
-				message,
-			};
-			emitEvent({
-				type: "response.failed",
-				response: responseObject as Response,
-				sequence_number: sequenceNumber++,
-			});
 		}
 		res.end();
 		return;
-	}
-
-	try {
-		const chatCompletionResponse = await client.chatCompletion(payload);
-
-		responseObject.status = "completed";
-		for (const choice of chatCompletionResponse.choices) {
-			if (choice.message.content) {
-				responseObject.output.push({
-					id: generateUniqueId("msg"),
-					type: "message",
-					role: "assistant",
-					status: "completed",
-					content: [
-						{
-							type: "output_text",
-							text: choice.message.content,
-							annotations: [],
-						},
-					],
+	} else {
+		for await (const event of events) {
+			if (event.type === "response.completed") {
+				res.json(event.response);
+			} else if (event.type === "response.failed") {
+				res.status(500).json({
+					success: false,
+					error: event.response.error?.message,
 				});
 			}
-			if (choice.message.tool_calls) {
-				for (const toolCall of choice.message.tool_calls) {
-					if (toolCall.function.name in mcpToolsMapping) {
-						const toolParams = mcpToolsMapping[toolCall.function.name];
+		}
+		return;
+	}
+}
 
-						// Check if approval is required
-						const approvalRequired =
-							toolParams.require_approval === "always"
-								? true
-								: toolParams.require_approval === "never"
-									? false
-									: toolParams.require_approval.always?.tool_names?.includes(toolCall.function.name)
-										? true
-										: toolParams.require_approval.never?.tool_names?.includes(toolCall.function.name)
-											? false
-											: true; // behavior is undefined in specs, let's default to
+/*
+ * Call LLM and stream the response.
+ */
+async function* callChatCompletionStream(
+	apiKey: string | undefined,
+	payload: ChatCompletionInput,
+	responseObject: IncompleteResponse,
+	mcpToolsMapping: Record<string, McpServerParams>
+): AsyncGenerator<ResponseStreamEvent> {
+	let sequenceNumber = 0;
 
-						if (approvalRequired) {
-							// TODO: Implement approval logic
-							console.log(`Requesting approval for MCP tool '${toolCall.function.name}'`);
-							responseObject.output.push({
-								type: "mcp_approval_request",
-								id: generateUniqueId("mcp_approval_request"),
-								name: toolCall.function.name,
-								server_label: toolParams.server_label,
-								arguments: toolCall.function.arguments,
-							});
-						} else {
-							responseObject.output.push(
-								await callMcpTool(
-									toolParams,
-									toolCall.function.name,
-									toolParams.server_label,
-									toolCall.function.arguments
-								)
-							);
-						}
-					} else {
-						responseObject.output.push({
-							type: "function_call",
-							id: generateUniqueId("fc"),
-							call_id: toolCall.id,
-							name: toolCall.function.name,
-							arguments: toolCall.function.arguments,
-							status: "completed",
-						});
+	try {
+		// Response created event
+		yield {
+			type: "response.created",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
+		};
+
+		// Response in progress event
+		yield {
+			type: "response.in_progress",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
+		};
+
+		const stream = new InferenceClient(apiKey).chatCompletionStream(payload);
+
+		for await (const chunk of stream) {
+			if (chunk.usage) {
+				// Overwrite usage with the latest chunk's usage
+				responseObject.usage = {
+					input_tokens: chunk.usage.prompt_tokens,
+					input_tokens_details: { cached_tokens: 0 },
+					output_tokens: chunk.usage.completion_tokens,
+					output_tokens_details: { reasoning_tokens: 0 },
+					total_tokens: chunk.usage.total_tokens,
+				};
+			}
+
+			if (chunk.choices[0].delta.content) {
+				if (responseObject.output.length === 0) {
+					const outputObject: ResponseOutputMessage = {
+						id: generateUniqueId("msg"),
+						type: "message",
+						role: "assistant",
+						status: "in_progress",
+						content: [],
+					};
+					responseObject.output = [outputObject];
+
+					// Response output item added event
+					yield {
+						type: "response.output_item.added",
+						output_index: 0,
+						item: outputObject,
+						sequence_number: sequenceNumber++,
+					};
+				}
+
+				const outputObject = responseObject.output.at(-1);
+				if (!outputObject || outputObject.type !== "message") {
+					throw new StreamingError("Not implemented: only single output item type is supported in streaming mode.");
+				}
+
+				if (outputObject.content.length === 0) {
+					// Response content part added event
+					const contentPart: ResponseContentPartAddedEvent["part"] = {
+						type: "output_text",
+						text: "",
+						annotations: [],
+					};
+					outputObject.content.push(contentPart);
+
+					yield {
+						type: "response.content_part.added",
+						item_id: outputObject.id,
+						output_index: 0,
+						content_index: 0,
+						part: contentPart,
+						sequence_number: sequenceNumber++,
+					};
+				}
+
+				const contentPart = outputObject.content.at(-1);
+				if (!contentPart || contentPart.type !== "output_text") {
+					throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
+				}
+
+				// Add text delta
+				contentPart.text += chunk.choices[0].delta.content;
+				yield {
+					type: "response.output_text.delta",
+					item_id: outputObject.id,
+					output_index: 0,
+					content_index: 0,
+					delta: chunk.choices[0].delta.content,
+					sequence_number: sequenceNumber++,
+				};
+			} else if (chunk.choices[0].delta.tool_calls && chunk.choices[0].delta.tool_calls.length > 0) {
+				if (chunk.choices[0].delta.tool_calls.length > 1) {
+					throw new StreamingError("Not implemented: only single tool call is supported in streaming mode.");
+				}
+
+				const lastOutput = responseObject.output.at(-1);
+				const allowedTypes = new Set(["mcp_call", "function_call", "message"]);
+				if (responseObject.output.length === 0 || !lastOutput || !allowedTypes.has(lastOutput.type)) {
+					if (!chunk.choices[0].delta.tool_calls[0].function.name) {
+						throw new StreamingError("Tool call function name is required.");
 					}
+
+					const outputObject: ResponseOutputItem.McpCall | ResponseFunctionToolCall =
+						chunk.choices[0].delta.tool_calls[0].function.name in mcpToolsMapping
+							? {
+									type: "mcp_call",
+									id: generateUniqueId("mcp_call"),
+									name: chunk.choices[0].delta.tool_calls[0].function.name,
+									server_label: mcpToolsMapping[chunk.choices[0].delta.tool_calls[0].function.name].server_label,
+									arguments: "",
+								}
+							: {
+									type: "function_call",
+									id: generateUniqueId("fc"),
+									call_id: chunk.choices[0].delta.tool_calls[0].id,
+									name: chunk.choices[0].delta.tool_calls[0].function.name,
+									arguments: "",
+								};
+					responseObject.output = [outputObject];
+
+					// Response output item added event
+					yield {
+						type: "response.output_item.added",
+						output_index: responseObject.output.length - 1,
+						item: outputObject,
+						sequence_number: sequenceNumber++,
+					};
+				}
+
+				const outputObject = responseObject.output.at(-1);
+
+				if (outputObject?.type === "mcp_call") {
+					outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
+					yield {
+						type: "response.mcp_call.arguments_delta",
+						item_id: outputObject.id as string,
+						output_index: responseObject.output.length - 1,
+						delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
+						sequence_number: sequenceNumber++,
+					};
+				} else if (outputObject?.type === "function_call") {
+					outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
+					yield {
+						type: "response.function_call_arguments.delta",
+						item_id: outputObject.id as string,
+						output_index: responseObject.output.length - 1,
+						delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
+						sequence_number: sequenceNumber++,
+					};
+				} else {
+					console.log(outputObject);
+					throw new StreamingError("Not implemented: can only support single output item type in streaming mode.");
 				}
 			}
 		}
 
-		responseObject.usage = {
-			input_tokens: chatCompletionResponse.usage.prompt_tokens,
-			input_tokens_details: { cached_tokens: 0 },
-			output_tokens: chatCompletionResponse.usage.completion_tokens,
-			output_tokens_details: { reasoning_tokens: 0 },
-			total_tokens: chatCompletionResponse.usage.total_tokens,
+		const lastOutputItem = responseObject.output.at(-1);
+
+		if (lastOutputItem) {
+			if (lastOutputItem?.type === "message") {
+				const contentPart = lastOutputItem.content.at(-1);
+				if (contentPart?.type === "output_text") {
+					yield {
+						type: "response.output_text.done",
+						item_id: lastOutputItem.id,
+						output_index: responseObject.output.length - 1,
+						content_index: lastOutputItem.content.length - 1,
+						text: contentPart.text,
+						sequence_number: sequenceNumber++,
+					};
+
+					yield {
+						type: "response.content_part.done",
+						item_id: lastOutputItem.id,
+						output_index: responseObject.output.length - 1,
+						content_index: lastOutputItem.content.length - 1,
+						part: contentPart,
+						sequence_number: sequenceNumber++,
+					};
+				} else {
+					throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
+				}
+
+				// Response output item done event
+				lastOutputItem.status = "completed";
+				yield {
+					type: "response.output_item.done",
+					output_index: responseObject.output.length - 1,
+					item: lastOutputItem,
+					sequence_number: sequenceNumber++,
+				};
+			} else if (lastOutputItem?.type === "function_call") {
+				if (!lastOutputItem.id) {
+					throw new StreamingError("Function call id is required.");
+				}
+
+				yield {
+					type: "response.function_call_arguments.done",
+					item_id: lastOutputItem.id,
+					output_index: responseObject.output.length - 1,
+					arguments: lastOutputItem.arguments,
+					sequence_number: sequenceNumber++,
+				};
+
+				lastOutputItem.status = "completed";
+				yield {
+					type: "response.output_item.done",
+					output_index: responseObject.output.length - 1,
+					item: lastOutputItem,
+					sequence_number: sequenceNumber++,
+				};
+			} else if (lastOutputItem?.type === "mcp_call") {
+				yield {
+					type: "response.mcp_call.arguments_done",
+					item_id: lastOutputItem.id as string,
+					output_index: responseObject.output.length - 1,
+					arguments: lastOutputItem.arguments,
+					sequence_number: sequenceNumber++,
+				};
+			} else {
+				throw new StreamingError("Not implemented: only message output is supported in streaming mode.");
+			}
+		}
+
+		// Response completed event
+		yield {
+			type: "response.completed",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
+		};
+		return;
+	} catch (streamError) {
+		console.error("Error in streaming chat completion:", streamError);
+
+		let message = "An error occurred while streaming from inference server.";
+		if (streamError instanceof StreamingError) {
+			message = streamError.message;
+		} else if (
+			typeof streamError === "object" &&
+			streamError &&
+			"message" in streamError &&
+			typeof streamError.message === "string"
+		) {
+			message = streamError.message;
+		}
+		responseObject.status = "failed";
+		responseObject.error = {
+			code: "server_error",
+			message,
+		};
+		yield {
+			type: "response.failed",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
+		};
+		return;
+	}
+}
+
+/*
+ * Perform an approved MCP tool call and stream the response.
+ */
+async function* callApprovedMCPToolStream(
+	approval_request_id: string,
+	approvalRequest: McpApprovalRequestParams | undefined,
+	mcpToolsMapping: Record<string, McpServerParams>,
+	responseObject: IncompleteResponse
+): AsyncGenerator<ResponseStreamEvent> {
+	let sequenceNumber = 0;
+
+	// Response created event
+	yield {
+		type: "response.created",
+		response: responseObject as Response,
+		sequence_number: sequenceNumber++,
+	};
+
+	// Response in progress event
+	yield {
+		type: "response.in_progress",
+		response: responseObject as Response,
+		sequence_number: sequenceNumber++,
+	};
+
+	if (approvalRequest) {
+		const outputObject: ResponseOutputItem.McpCall = {
+			type: "mcp_call",
+			id: generateUniqueId("mcp_call"),
+			name: approvalRequest.name,
+			server_label: approvalRequest.server_label,
+			arguments: approvalRequest.arguments,
+		};
+		responseObject.output.push(outputObject);
+
+		// Response output item added event
+		yield {
+			type: "response.output_item.added",
+			output_index: responseObject.output.length - 1,
+			item: outputObject,
+			sequence_number: sequenceNumber++,
 		};
 
-		res.json(responseObject);
-	} catch (error) {
-		console.error(error);
-		res.status(500).json({
-			success: false,
-			error: error instanceof Error ? error.message : "Unknown error",
-		});
+		yield {
+			type: "response.mcp_call.in_progress",
+			item_id: outputObject.id,
+			output_index: responseObject.output.length - 1,
+			sequence_number: sequenceNumber++,
+		};
+
+		const toolParams = mcpToolsMapping[approvalRequest.name];
+		const toolResult = await callMcpTool(
+			toolParams,
+			approvalRequest.name,
+			toolParams.server_label,
+			approvalRequest.arguments
+		);
+
+		if (toolResult.error) {
+			outputObject.error = toolResult.error;
+			yield {
+				type: "response.mcp_call.failed",
+				sequence_number: sequenceNumber++,
+			};
+		} else {
+			outputObject.output = toolResult.output;
+			yield {
+				type: "response.mcp_call.completed",
+				sequence_number: sequenceNumber++,
+			};
+		}
+		yield {
+			type: "response.output_item.done",
+			output_index: responseObject.output.length - 1,
+			item: outputObject,
+			sequence_number: sequenceNumber++,
+		};
+
+		if (outputObject.error) {
+			responseObject.status = "failed";
+			responseObject.error = {
+				code: "server_error",
+				message: outputObject.error,
+			};
+			yield {
+				type: "response.failed",
+				response: responseObject as Response,
+				sequence_number: sequenceNumber++,
+			};
+		} else {
+			responseObject.status = "completed";
+			yield {
+				type: "response.completed",
+				response: responseObject as Response,
+				sequence_number: sequenceNumber++,
+			};
+		}
+		return;
+	} else {
+		const errorMessage = `MCP approval response for approval request '${approval_request_id}' not found`;
+		console.error(errorMessage);
+		responseObject.status = "failed";
+		responseObject.error = {
+			code: "server_error",
+			message: errorMessage,
+		};
+		yield {
+			type: "response.failed",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
+		};
+		return;
 	}
-};
+}
