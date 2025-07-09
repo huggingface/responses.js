@@ -498,6 +498,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
         <button class="examples-tab" type="button">Streaming</button>
         <button class="examples-tab" type="button">Function Calling</button>
         <button class="examples-tab" type="button">Structured Output</button>
+        <button class="examples-tab" type="button">MCP</button>
       </div>
       <div class="example-panel active">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
@@ -656,6 +657,32 @@ response = client.responses.parse(
 )
 
 print(response.output_parsed)</code></pre>
+      </div>
+      <div class="example-panel">
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
+
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
+)
+
+response = client.responses.create(
+    model="cerebras@meta-llama/Llama-3.3-70B-Instruct",
+    input="how does tiktoken work?",
+    tools=[
+        {
+            "type": "mcp",
+            "server_label": "gitmcp",
+            "server_url": "https://gitmcp.io/openai/tiktoken",
+            "allowed_tools": ["search_tiktoken_documentation", "fetch_tiktoken_documentation"],
+            "require_approval": "never",
+        },
+    ],
+)
+
+for output in response.output:
+    print(output)</code></pre>
       </div>
     </section>
     <footer class="more-info-footer">
