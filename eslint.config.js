@@ -22,6 +22,7 @@ export default [
 				node: "readonly",
 				console: "readonly",
 				process: "readonly",
+				fetch: "readonly",
 			},
 		},
 		plugins: {
@@ -39,6 +40,26 @@ export default [
 			"@typescript-eslint/no-empty-interfaces": "off",
 			// For doc purposes, prefer interfaces
 			"@typescript-eslint/consistent-type-definitions": ["error", "interface"],
+		},
+	},
+	{
+		files: ["**/*.test.js", "**/*.test.ts"],
+		languageOptions: {
+			globals: {
+				describe: "readonly",
+				it: "readonly",
+				before: "readonly",
+				beforeEach: "readonly",
+				after: "readonly",
+				afterEach: "readonly",
+				context: "readonly",
+				suite: "readonly",
+				test: "readonly",
+				specify: "readonly",
+				xdescribe: "readonly",
+				xit: "readonly",
+				xtest: "readonly",
+			},
 		},
 	},
 	prettierConfig,

@@ -6,7 +6,7 @@ const stream = await openai.responses.create({
 	input: [
 		{
 			role: "user",
-			content: "Say 'double bubble bath' ten times fast.",
+			content: "What's the capital of France?",
 		},
 	],
 	stream: true,
