@@ -41,20 +41,20 @@ export const postCreateResponse = async (
 	if (req.body.stream) {
 		res.setHeader("Content-Type", "text/event-stream");
 		res.setHeader("Connection", "keep-alive");
-		console.debug("Stream request")
+		console.debug("Stream request");
 		for await (const event of events) {
-			console.debug(`New event: ${event.type}`);
+			console.debug(`Event #${event.sequence_number}: ${event.type}`);
 			res.write(`data: ${JSON.stringify(event)}\n\n`);
 		}
 		res.end();
 	} else {
-		console.debug("Non-stream request")
+		console.debug("Non-stream request");
 		for await (const event of events) {
 			if (event.type === "response.completed") {
-				console.debug("Response completed")
+				console.debug("Response completed");
 				res.json(event.response);
 			} else if (event.type === "response.failed") {
-				console.debug("Response failed")
+				console.debug("Response failed");
 				res.status(500).json({
 					success: false,
 					error: event.response.error?.message,
@@ -271,6 +271,7 @@ async function* innerRunStream(
 							yield event;
 						}
 					}
+					mcpListTools = responseObject.output.at(-1) as ResponseOutputItem.McpListTools;
 
 					// Only allowed tools are forwarded to the LLM
 					const allowedTools = tool.allowed_tools
@@ -528,8 +529,12 @@ async function* callChatCompletionStream(
 			};
 		}
 
-		if (chunk.choices[0].delta.content) {
-			if (responseObject.output.length === 0) {
+		const delta = chunk.choices[0].delta;
+		if (delta.content) {
+			let currentOutputItem = responseObject.output.at(-1);
+
+			// If start of a new message, create it
+			if (currentOutputItem?.type !== "message" || currentOutputItem?.status !== "in_progress") {
 				const outputObject: ResponseOutputMessage = {
 					id: generateUniqueId("msg"),
 					type: "message",
@@ -537,7 +542,7 @@ async function* callChatCompletionStream(
 					status: "in_progress",
 					content: [],
 				};
-				responseObject.output = [outputObject];
+				responseObject.output.push(outputObject);
 
 				// Response output item added event
 				yield {
@@ -548,113 +553,99 @@ async function* callChatCompletionStream(
 				};
 			}
 
-			const outputObject = responseObject.output.at(-1);
-			if (!outputObject || outputObject.type !== "message") {
-				throw new StreamingError("Not implemented: only single output item type is supported in streaming mode.");
-			}
-
-			if (outputObject.content.length === 0) {
+			// If start of a new content part, create it
+			currentOutputItem = responseObject.output.at(-1) as ResponseOutputMessage;
+			if (currentOutputItem.content.length === 0) {
 				// Response content part added event
 				const contentPart: ResponseContentPartAddedEvent["part"] = {
 					type: "output_text",
 					text: "",
 					annotations: [],
 				};
-				outputObject.content.push(contentPart);
+				currentOutputItem.content.push(contentPart);
 
 				yield {
 					type: "response.content_part.added",
-					item_id: outputObject.id,
-					output_index: 0,
-					content_index: 0,
+					item_id: currentOutputItem.id,
+					output_index: responseObject.output.length - 1,
+					content_index: currentOutputItem.content.length - 1,
 					part: contentPart,
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			}
 
-			const contentPart = outputObject.content.at(-1);
+			const contentPart = currentOutputItem.content.at(-1);
 			if (!contentPart || contentPart.type !== "output_text") {
-				throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
+				throw new StreamingError(
+					`Not implemented: only output_text is supported in response.output[].content[].type. Got ${contentPart?.type}`
+				);
 			}
 
 			// Add text delta
-			contentPart.text += chunk.choices[0].delta.content;
+			contentPart.text += delta.content;
 			yield {
 				type: "response.output_text.delta",
-				item_id: outputObject.id,
-				output_index: 0,
-				content_index: 0,
-				delta: chunk.choices[0].delta.content,
+				item_id: currentOutputItem.id,
+				output_index: responseObject.output.length - 1,
+				content_index: currentOutputItem.content.length - 1,
+				delta: delta.content,
 				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 			};
-		} else if (chunk.choices[0].delta.tool_calls && chunk.choices[0].delta.tool_calls.length > 0) {
-			if (chunk.choices[0].delta.tool_calls.length > 1) {
-				throw new StreamingError("Not implemented: only single tool call is supported in streaming mode.");
+		} else if (delta.tool_calls && delta.tool_calls.length > 0) {
+			if (delta.tool_calls.length > 1) {
+				throw new StreamingError("Not implemented: multiple tool calls are not supported.");
 			}
 
-			const lastOutput = responseObject.output.at(-1);
-			const allowedTypes = new Set(["mcp_call", "function_call", "message"]);
-			if (responseObject.output.length === 0 || !lastOutput || !allowedTypes.has(lastOutput.type)) {
-				if (!chunk.choices[0].delta.tool_calls[0].function.name) {
-					throw new StreamingError("Tool call function name is required.");
+			let currentOutputItem = responseObject.output.at(-1);
+			if (currentOutputItem?.type !== "mcp_call" && currentOutputItem?.type !== "function_call") {
+				if (!delta.tool_calls[0].function.name) {
+					throw new StreamingError("Tool call function name is required when starting a new tool call.");
 				}
 
-				const outputObject: ResponseOutputItem.McpCall | ResponseFunctionToolCall =
-					chunk.choices[0].delta.tool_calls[0].function.name in mcpToolsMapping
+				const newOutputObject: ResponseOutputItem.McpCall | ResponseFunctionToolCall =
+					delta.tool_calls[0].function.name in mcpToolsMapping
 						? {
 								type: "mcp_call",
 								id: generateUniqueId("mcp_call"),
-								name: chunk.choices[0].delta.tool_calls[0].function.name,
-								server_label: mcpToolsMapping[chunk.choices[0].delta.tool_calls[0].function.name].server_label,
+								name: delta.tool_calls[0].function.name,
+								server_label: mcpToolsMapping[delta.tool_calls[0].function.name].server_label,
 								arguments: "",
 							}
 						: {
 								type: "function_call",
 								id: generateUniqueId("fc"),
-								call_id: chunk.choices[0].delta.tool_calls[0].id,
-								name: chunk.choices[0].delta.tool_calls[0].function.name,
+								call_id: delta.tool_calls[0].id,
+								name: delta.tool_calls[0].function.name,
 								arguments: "",
 							};
-				responseObject.output = [outputObject];
 
 				// Response output item added event
+				responseObject.output.push(newOutputObject);
 				yield {
 					type: "response.output_item.added",
 					output_index: responseObject.output.length - 1,
-					item: outputObject,
+					item: newOutputObject,
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			}
 
-			const outputObject = responseObject.output.at(-1);
-
-			if (outputObject?.type === "mcp_call") {
-				outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
-				yield {
-					type: "response.mcp_call.arguments_delta",
-					item_id: outputObject.id as string,
-					output_index: responseObject.output.length - 1,
-					delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
-					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-				};
-			} else if (outputObject?.type === "function_call") {
-				outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
-				yield {
-					type: "response.function_call_arguments.delta",
-					item_id: outputObject.id as string,
-					output_index: responseObject.output.length - 1,
-					delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
-					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-				};
-			} else {
-				console.log(outputObject);
-				throw new StreamingError("Not implemented: can only support single output item type in streaming mode.");
-			}
+			// Current item is necessarily a tool call
+			currentOutputItem = responseObject.output.at(-1) as ResponseOutputItem.McpCall | ResponseFunctionToolCall;
+			currentOutputItem.arguments += delta.tool_calls[0].function.arguments;
+			yield {
+				type:
+					currentOutputItem.type === "mcp_call"
+						? "response.mcp_call.arguments_delta"
+						: "response.function_call_arguments.delta",
+				item_id: currentOutputItem.id as string,
+				output_index: responseObject.output.length - 1,
+				delta: delta.tool_calls[0].function.arguments,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
 		}
 	}
 
 	const lastOutputItem = responseObject.output.at(-1);
-
 	if (lastOutputItem) {
 		if (lastOutputItem?.type === "message") {
 			const contentPart = lastOutputItem.content.at(-1);
@@ -689,13 +680,9 @@ async function* callChatCompletionStream(
 				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 			};
 		} else if (lastOutputItem?.type === "function_call") {
-			if (!lastOutputItem.id) {
-				throw new StreamingError("Function call id is required.");
-			}
-
 			yield {
 				type: "response.function_call_arguments.done",
-				item_id: lastOutputItem.id,
+				item_id: lastOutputItem.id as string,
 				output_index: responseObject.output.length - 1,
 				arguments: lastOutputItem.arguments,
 				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
@@ -716,8 +703,16 @@ async function* callChatCompletionStream(
 				arguments: lastOutputItem.arguments,
 				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 			};
+			yield {
+				type: "response.output_item.done",
+				output_index: responseObject.output.length - 1,
+				item: lastOutputItem,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
 		} else {
-			throw new StreamingError("Not implemented: only message output is supported in streaming mode.");
+			throw new StreamingError(
+				`Not implemented: expected message, function_call, or mcp_call, got ${lastOutputItem?.type}`
+			);
 		}
 	}
 }
