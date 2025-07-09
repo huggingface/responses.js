@@ -6,8 +6,6 @@ import { URL } from "url";
 
 import type { McpServerParams } from "./schemas";
 import { McpResultFormatter } from "./lib/McpResultFormatter";
-import { generateUniqueId } from "./lib/generateUniqueId";
-import type { ResponseOutputItem } from "openai/resources/responses/responses";
 
 export async function connectMcpServer(mcpServer: McpServerParams): Promise<Client> {
 	const mcp = new Client({ name: "@huggingface/responses.js", version: packageVersion });
@@ -37,7 +35,6 @@ export async function connectMcpServer(mcpServer: McpServerParams): Promise<Clie
 export async function callMcpTool(
 	mcpServer: McpServerParams,
 	toolName: string,
-	server_label: string,
 	argumentsString: string
 ): Promise<{ error: string; output?: undefined } | { error?: undefined; output: string }> {
 	try {

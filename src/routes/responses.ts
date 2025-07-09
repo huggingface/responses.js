@@ -28,11 +28,203 @@ class StreamingError extends Error {
 }
 
 type IncompleteResponse = Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls">;
+const SEQUENCE_NUMBER_PLACEHOLDER = -1;
 
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
 ): Promise<void> => {
+	// To avoid duplicated code, we run all requests as stream.
+	const events = runCreateResponseStream(req, res);
+
+	// Then we return in the correct format depending on the user 'stream' flag.
+	if (req.body.stream) {
+		res.setHeader("Content-Type", "text/event-stream");
+		res.setHeader("Connection", "keep-alive");
+		console.debug("Stream request")
+		for await (const event of events) {
+			console.debug(`New event: ${event.type}`);
+			res.write(`data: ${JSON.stringify(event)}\n\n`);
+		}
+		res.end();
+	} else {
+		console.debug("Non-stream request")
+		for await (const event of events) {
+			if (event.type === "response.completed") {
+				console.debug("Response completed")
+				res.json(event.response);
+			} else if (event.type === "response.failed") {
+				console.debug("Response failed")
+				res.status(500).json({
+					success: false,
+					error: event.response.error?.message,
+				});
+			}
+		}
+	}
+
+	// try {
+	// 	const chatCompletionResponse = await client.chatCompletion(payload);
+
+	// 	responseObject.status = "completed";
+	// 	for (const choice of chatCompletionResponse.choices) {
+	// 		if (choice.message.content) {
+	// 			responseObject.output.push({
+	// 				id: generateUniqueId("msg"),
+	// 				type: "message",
+	// 				role: "assistant",
+	// 				status: "completed",
+	// 				content: [
+	// 					{
+	// 						type: "output_text",
+	// 						text: choice.message.content,
+	// 						annotations: [],
+	// 					},
+	// 				],
+	// 			});
+	// 		}
+	// 		if (choice.message.tool_calls) {
+	// 			for (const toolCall of choice.message.tool_calls) {
+	// 				if (toolCall.function.name in mcpToolsMapping) {
+	// 					const toolParams = mcpToolsMapping[toolCall.function.name];
+
+	// 					// Check if approval is required
+	// 					const approvalRequired =
+	// 						toolParams.require_approval === "always"
+	// 							? true
+	// 							: toolParams.require_approval === "never"
+	// 								? false
+	// 								: toolParams.require_approval.always?.tool_names?.includes(toolCall.function.name)
+	// 									? true
+	// 									: toolParams.require_approval.never?.tool_names?.includes(toolCall.function.name)
+	// 										? false
+	// 										: true; // behavior is undefined in specs, let's default to
+
+	// 					if (approvalRequired) {
+	// 						// TODO: Implement approval logic
+	// 						console.log(`Requesting approval for MCP tool '${toolCall.function.name}'`);
+	// 						responseObject.output.push({
+	// 							type: "mcp_approval_request",
+	// 							id: generateUniqueId("mcp_approval_request"),
+	// 							name: toolCall.function.name,
+	// 							server_label: toolParams.server_label,
+	// 							arguments: toolCall.function.arguments,
+	// 						});
+	// 					} else {
+	// 						responseObject.output.push(
+	// 							await callMcpTool(
+	// 								toolParams,
+	// 								toolCall.function.name,
+	// 								toolParams.server_label,
+	// 								toolCall.function.arguments
+	// 							)
+	// 						);
+	// 					}
+	// 				} else {
+	// 					responseObject.output.push({
+	// 						type: "function_call",
+	// 						id: generateUniqueId("fc"),
+	// 						call_id: toolCall.id,
+	// 						name: toolCall.function.name,
+	// 						arguments: toolCall.function.arguments,
+	// 						status: "completed",
+	// 					});
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+};
+
+/*
+ * Top-level stream.
+ *
+ * Handles response lifecycle + execute inner logic (MCP list tools, MCP tool calls, LLM call, etc.).
+ * Handles sequenceNumber by overwriting it in the events.
+ */
+async function* runCreateResponseStream(
+	req: ValidatedRequest<CreateResponseParams>,
+	res: ExpressResponse
+): AsyncGenerator<ResponseStreamEvent> {
+	let sequenceNumber = 0;
+	// Prepare response object that will be iteratively populated
+	const responseObject: IncompleteResponse = {
+		created_at: Math.floor(new Date().getTime() / 1000),
+		error: null,
+		id: generateUniqueId("resp"),
+		instructions: req.body.instructions,
+		max_output_tokens: req.body.max_output_tokens,
+		metadata: req.body.metadata,
+		model: req.body.model,
+		object: "response",
+		output: [],
+		// parallel_tool_calls: req.body.parallel_tool_calls,
+		status: "in_progress",
+		text: req.body.text,
+		tool_choice: req.body.tool_choice ?? "auto",
+		tools: req.body.tools ?? [],
+		temperature: req.body.temperature,
+		top_p: req.body.top_p,
+		usage: {
+			input_tokens: 0,
+			input_tokens_details: { cached_tokens: 0 },
+			output_tokens: 0,
+			output_tokens_details: { reasoning_tokens: 0 },
+			total_tokens: 0,
+		},
+	};
+
+	// Response created event
+	yield {
+		type: "response.created",
+		response: responseObject as Response,
+		sequence_number: sequenceNumber++,
+	};
+
+	// Response in progress event
+	yield {
+		type: "response.in_progress",
+		response: responseObject as Response,
+		sequence_number: sequenceNumber++,
+	};
+
+	// Any events (LLM call, MCP call, list tools, etc.)
+	try {
+		for await (const event of innerRunStream(req, res, responseObject)) {
+			yield { ...event, sequence_number: sequenceNumber++ };
+		}
+	} catch (error) {
+		// Error event => stop
+		console.error("Error in stream:", error);
+		const message =
+			typeof error === "object" && error && "message" in error && typeof error.message === "string"
+				? error.message
+				: "An error occurred in stream";
+		responseObject.status = "failed";
+		responseObject.error = {
+			code: "server_error",
+			message,
+		};
+		yield {
+			type: "response.failed",
+			response: responseObject as Response,
+			sequence_number: sequenceNumber++,
+		};
+		return;
+	}
+
+	// Response completed event
+	yield {
+		type: "response.completed",
+		response: responseObject as Response,
+		sequence_number: sequenceNumber++,
+	};
+}
+
+async function* innerRunStream(
+	req: ValidatedRequest<CreateResponseParams>,
+	res: ExpressResponse,
+	responseObject: IncompleteResponse
+): AsyncGenerator<ResponseStreamEvent> {
 	// Retrieve API key from headers
 	const apiKey = req.headers.authorization?.split(" ")[1];
 	if (!apiKey) {
@@ -42,6 +234,102 @@ export const postCreateResponse = async (
 		});
 		return;
 	}
+
+	// List MCP tools from server (if required) + prepare tools for the LLM
+	let tools: ChatCompletionInputTool[] | undefined = [];
+	const mcpToolsMapping: Record<string, McpServerParams> = {};
+	if (req.body.tools) {
+		for (const tool of req.body.tools) {
+			switch (tool.type) {
+				case "function":
+					tools?.push({
+						type: tool.type,
+						function: {
+							name: tool.name,
+							parameters: tool.parameters,
+							description: tool.description,
+							strict: tool.strict,
+						},
+					});
+					break;
+				case "mcp": {
+					let mcpListTools: ResponseOutputItem.McpListTools | undefined;
+
+					// If MCP list tools is already in the input, use it
+					if (Array.isArray(req.body.input)) {
+						for (const item of req.body.input) {
+							if (item.type === "mcp_list_tools" && item.server_label === tool.server_label) {
+								mcpListTools = item;
+								console.debug(`Using MCP list tools from input for server '${tool.server_label}'`);
+								break;
+							}
+						}
+					}
+					// Otherwise, list tools from MCP server
+					if (!mcpListTools) {
+						for await (const event of listMcpToolsStream(tool, responseObject)) {
+							yield event;
+						}
+					}
+
+					// Only allowed tools are forwarded to the LLM
+					const allowedTools = tool.allowed_tools
+						? Array.isArray(tool.allowed_tools)
+							? tool.allowed_tools
+							: tool.allowed_tools.tool_names
+						: [];
+					if (mcpListTools?.tools) {
+						for (const mcpTool of mcpListTools.tools) {
+							if (allowedTools.length === 0 || allowedTools.includes(mcpTool.name)) {
+								tools?.push({
+									type: "function" as const,
+									function: {
+										name: mcpTool.name,
+										parameters: mcpTool.input_schema,
+										description: mcpTool.description ?? undefined,
+									},
+								});
+							}
+							mcpToolsMapping[mcpTool.name] = tool;
+						}
+						break;
+					}
+				}
+			}
+		}
+	}
+	if (tools.length === 0) {
+		tools = undefined;
+	}
+
+	// If MCP approval requests => execute them and return (no LLM call)
+	if (Array.isArray(req.body.input)) {
+		for (const item of req.body.input) {
+			// Note: currently supporting only 1 mcp_approval_response per request
+			let shouldStop = false;
+			if (item.type === "mcp_approval_response" && item.approve) {
+				const approvalRequest = req.body.input.find(
+					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
+				) as McpApprovalRequestParams | undefined;
+				for await (const event of callApprovedMCPToolStream(
+					item.approval_request_id,
+					approvalRequest,
+					mcpToolsMapping,
+					responseObject
+				)) {
+					yield event;
+				}
+				shouldStop = true;
+			}
+			if (shouldStop) {
+				// stop if at least one approval request is processed
+				break;
+			}
+		}
+	}
+
+	// At this point, we have all tools and we know we want to call the LLM
+	// Let's prepare the payload and make the call!
 
 	// Resolve model and provider
 	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
@@ -134,150 +422,6 @@ export const postCreateResponse = async (
 		messages.push({ role: "user", content: req.body.input });
 	}
 
-	const output: ResponseOutputItem[] = [];
-	let tools: ChatCompletionInputTool[] | undefined = [];
-	const mcpToolsMapping: Record<string, McpServerParams> = {};
-
-	// Format tools to Chat Completion format
-	// If MCP tool, list tools from MCP server
-	if (req.body.tools) {
-		await Promise.all(
-			req.body.tools.map(async (tool) => {
-				switch (tool.type) {
-					case "function":
-						tools?.push({
-							type: tool.type,
-							function: {
-								name: tool.name,
-								parameters: tool.parameters,
-								description: tool.description,
-								strict: tool.strict,
-							},
-						});
-						break;
-					case "mcp": {
-						let mcpListTools: ResponseOutputItem.McpListTools | undefined;
-
-						// If MCP list tools is already in the input, use it
-						if (Array.isArray(req.body.input)) {
-							for (const item of req.body.input) {
-								if (item.type === "mcp_list_tools" && item.server_label === tool.server_label) {
-									mcpListTools = item;
-									console.debug(`Using MCP list tools from input for server '${tool.server_label}'`);
-									break;
-								}
-							}
-						}
-						// Otherwise, list tools from MCP server
-						if (!mcpListTools) {
-							try {
-								const mcp = await connectMcpServer(tool);
-								console.debug("Listing MCP tools from server");
-								const mcpTools = await mcp.listTools();
-								console.debug(`Fetched ${mcpTools.tools.length} tools from MCP server '${tool.server_label}'`);
-
-								// All tools are returned in Response object
-								mcpListTools = {
-									id: generateUniqueId("mcp_list_tools"),
-									type: "mcp_list_tools",
-									server_label: tool.server_label,
-									tools: mcpTools.tools.map((mcpTool) => ({
-										input_schema: mcpTool.inputSchema,
-										name: mcpTool.name,
-										annotations: mcpTool.annotations,
-										description: mcpTool.description,
-									})),
-								};
-							} catch (error) {
-								console.error("Error listing tools from MCP server", error);
-								mcpListTools = {
-									id: generateUniqueId("mcp_list_tools"),
-									type: "mcp_list_tools",
-									server_label: tool.server_label,
-									tools: [],
-									error: `Failed to list tools from MCP server '${tool.server_label}': ${error instanceof Error ? error.message : "Unknown error"}`,
-								};
-							}
-							output.push(mcpListTools);
-						}
-
-						// Only allowed tools are forwarded to the LLM
-						const allowedTools = tool.allowed_tools
-							? Array.isArray(tool.allowed_tools)
-								? tool.allowed_tools
-								: tool.allowed_tools.tool_names
-							: [];
-						if (mcpListTools?.tools) {
-							for (const mcpTool of mcpListTools.tools) {
-								if (allowedTools.length === 0 || allowedTools.includes(mcpTool.name)) {
-									tools?.push({
-										type: "function" as const,
-										function: {
-											name: mcpTool.name,
-											parameters: mcpTool.input_schema,
-											description: mcpTool.description ?? undefined,
-										},
-									});
-								}
-								mcpToolsMapping[mcpTool.name] = tool;
-							}
-							break;
-						}
-					}
-				}
-			})
-		);
-	}
-	if (tools.length === 0) {
-		tools = undefined;
-	}
-
-	// Prepare response object that will be iteratively populated
-	const responseObject: IncompleteResponse = {
-		created_at: Math.floor(new Date().getTime() / 1000),
-		error: null,
-		id: generateUniqueId("resp"),
-		instructions: req.body.instructions,
-		max_output_tokens: req.body.max_output_tokens,
-		metadata: req.body.metadata,
-		model: req.body.model,
-		object: "response",
-		output,
-		// parallel_tool_calls: req.body.parallel_tool_calls,
-		status: "in_progress",
-		text: req.body.text,
-		tool_choice: req.body.tool_choice ?? "auto",
-		tools: req.body.tools ?? [],
-		temperature: req.body.temperature,
-		top_p: req.body.top_p,
-		usage: {
-			input_tokens: 0,
-			input_tokens_details: { cached_tokens: 0 },
-			output_tokens: 0,
-			output_tokens_details: { reasoning_tokens: 0 },
-			total_tokens: 0,
-		},
-	};
-
-	// If MCP approval requests => do not call LLM at all
-	if (Array.isArray(req.body.input)) {
-		for (const item of req.body.input) {
-			// Note: currently supporting only 1 mcp_approval_response per request
-			if (item.type === "mcp_approval_response" && item.approve) {
-				const approvalRequest = req.body.input.find(
-					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
-				) as McpApprovalRequestParams | undefined;
-				const events = callApprovedMCPToolStream(
-					item.approval_request_id,
-					approvalRequest,
-					mcpToolsMapping,
-					responseObject
-				);
-				return await returnFromStream(events, res, req.body.stream);
-			}
-		}
-	}
-
 	// Prepare payload for the LLM
 	const payload: ChatCompletionInput = {
 		// main params
@@ -318,108 +462,46 @@ export const postCreateResponse = async (
 	};
 
 	// Call LLM
-	const events = callChatCompletionStream(apiKey, payload, responseObject, mcpToolsMapping);
-	return await returnFromStream(events, res, req.body.stream);
+	for await (const event of callChatCompletionStream(apiKey, payload, responseObject, mcpToolsMapping)) {
+		yield event;
+	}
+}
 
-	// try {
-	// 	const chatCompletionResponse = await client.chatCompletion(payload);
+async function* listMcpToolsStream(
+	tool: McpServerParams,
+	responseObject: IncompleteResponse
+): AsyncGenerator<ResponseStreamEvent> {
+	yield {
+		type: "response.mcp_list_tools.in_progress",
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
 
-	// 	responseObject.status = "completed";
-	// 	for (const choice of chatCompletionResponse.choices) {
-	// 		if (choice.message.content) {
-	// 			responseObject.output.push({
-	// 				id: generateUniqueId("msg"),
-	// 				type: "message",
-	// 				role: "assistant",
-	// 				status: "completed",
-	// 				content: [
-	// 					{
-	// 						type: "output_text",
-	// 						text: choice.message.content,
-	// 						annotations: [],
-	// 					},
-	// 				],
-	// 			});
-	// 		}
-	// 		if (choice.message.tool_calls) {
-	// 			for (const toolCall of choice.message.tool_calls) {
-	// 				if (toolCall.function.name in mcpToolsMapping) {
-	// 					const toolParams = mcpToolsMapping[toolCall.function.name];
-
-	// 					// Check if approval is required
-	// 					const approvalRequired =
-	// 						toolParams.require_approval === "always"
-	// 							? true
-	// 							: toolParams.require_approval === "never"
-	// 								? false
-	// 								: toolParams.require_approval.always?.tool_names?.includes(toolCall.function.name)
-	// 									? true
-	// 									: toolParams.require_approval.never?.tool_names?.includes(toolCall.function.name)
-	// 										? false
-	// 										: true; // behavior is undefined in specs, let's default to
-
-	// 					if (approvalRequired) {
-	// 						// TODO: Implement approval logic
-	// 						console.log(`Requesting approval for MCP tool '${toolCall.function.name}'`);
-	// 						responseObject.output.push({
-	// 							type: "mcp_approval_request",
-	// 							id: generateUniqueId("mcp_approval_request"),
-	// 							name: toolCall.function.name,
-	// 							server_label: toolParams.server_label,
-	// 							arguments: toolCall.function.arguments,
-	// 						});
-	// 					} else {
-	// 						responseObject.output.push(
-	// 							await callMcpTool(
-	// 								toolParams,
-	// 								toolCall.function.name,
-	// 								toolParams.server_label,
-	// 								toolCall.function.arguments
-	// 							)
-	// 						);
-	// 					}
-	// 				} else {
-	// 					responseObject.output.push({
-	// 						type: "function_call",
-	// 						id: generateUniqueId("fc"),
-	// 						call_id: toolCall.id,
-	// 						name: toolCall.function.name,
-	// 						arguments: toolCall.function.arguments,
-	// 						status: "completed",
-	// 					});
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-};
-
-/*
- * Returns response in correct format depending on stream flag.
- *
- * If stream is true, returns response as event-stream.
- * If stream is false, returns response as JSON.
- */
-async function returnFromStream(events: AsyncGenerator<ResponseStreamEvent>, res: ExpressResponse, stream: boolean) {
-	if (stream) {
-		res.setHeader("Content-Type", "text/event-stream");
-		res.setHeader("Connection", "keep-alive");
-		for await (const event of events) {
-			res.write(`data: ${JSON.stringify(event)}\n\n`);
-		}
-		res.end();
-		return;
-	} else {
-		for await (const event of events) {
-			if (event.type === "response.completed") {
-				res.json(event.response);
-			} else if (event.type === "response.failed") {
-				res.status(500).json({
-					success: false,
-					error: event.response.error?.message,
-				});
-			}
-		}
-		return;
+	try {
+		const mcp = await connectMcpServer(tool);
+		const mcpTools = await mcp.listTools();
+		yield {
+			type: "response.mcp_list_tools.completed",
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		};
+		responseObject.output.push({
+			id: generateUniqueId("mcp_list_tools"),
+			type: "mcp_list_tools",
+			server_label: tool.server_label,
+			tools: mcpTools.tools.map((mcpTool) => ({
+				input_schema: mcpTool.inputSchema,
+				name: mcpTool.name,
+				annotations: mcpTool.annotations,
+				description: mcpTool.description,
+			})),
+		});
+	} catch (error) {
+		const errorMessage = `Failed to list tools from MCP server '${tool.server_label}': ${error instanceof Error ? error.message : "Unknown error"}`;
+		console.error(errorMessage);
+		yield {
+			type: "response.mcp_list_tools.failed",
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		};
+		throw new Error(errorMessage);
 	}
 }
 
@@ -432,262 +514,211 @@ async function* callChatCompletionStream(
 	responseObject: IncompleteResponse,
 	mcpToolsMapping: Record<string, McpServerParams>
 ): AsyncGenerator<ResponseStreamEvent> {
-	let sequenceNumber = 0;
+	const stream = new InferenceClient(apiKey).chatCompletionStream(payload);
 
-	try {
-		// Response created event
-		yield {
-			type: "response.created",
-			response: responseObject as Response,
-			sequence_number: sequenceNumber++,
-		};
+	for await (const chunk of stream) {
+		if (chunk.usage) {
+			// Overwrite usage with the latest chunk's usage
+			responseObject.usage = {
+				input_tokens: chunk.usage.prompt_tokens,
+				input_tokens_details: { cached_tokens: 0 },
+				output_tokens: chunk.usage.completion_tokens,
+				output_tokens_details: { reasoning_tokens: 0 },
+				total_tokens: chunk.usage.total_tokens,
+			};
+		}
 
-		// Response in progress event
-		yield {
-			type: "response.in_progress",
-			response: responseObject as Response,
-			sequence_number: sequenceNumber++,
-		};
+		if (chunk.choices[0].delta.content) {
+			if (responseObject.output.length === 0) {
+				const outputObject: ResponseOutputMessage = {
+					id: generateUniqueId("msg"),
+					type: "message",
+					role: "assistant",
+					status: "in_progress",
+					content: [],
+				};
+				responseObject.output = [outputObject];
 
-		const stream = new InferenceClient(apiKey).chatCompletionStream(payload);
-
-		for await (const chunk of stream) {
-			if (chunk.usage) {
-				// Overwrite usage with the latest chunk's usage
-				responseObject.usage = {
-					input_tokens: chunk.usage.prompt_tokens,
-					input_tokens_details: { cached_tokens: 0 },
-					output_tokens: chunk.usage.completion_tokens,
-					output_tokens_details: { reasoning_tokens: 0 },
-					total_tokens: chunk.usage.total_tokens,
+				// Response output item added event
+				yield {
+					type: "response.output_item.added",
+					output_index: 0,
+					item: outputObject,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			}
 
-			if (chunk.choices[0].delta.content) {
-				if (responseObject.output.length === 0) {
-					const outputObject: ResponseOutputMessage = {
-						id: generateUniqueId("msg"),
-						type: "message",
-						role: "assistant",
-						status: "in_progress",
-						content: [],
-					};
-					responseObject.output = [outputObject];
+			const outputObject = responseObject.output.at(-1);
+			if (!outputObject || outputObject.type !== "message") {
+				throw new StreamingError("Not implemented: only single output item type is supported in streaming mode.");
+			}
 
-					// Response output item added event
-					yield {
-						type: "response.output_item.added",
-						output_index: 0,
-						item: outputObject,
-						sequence_number: sequenceNumber++,
-					};
-				}
+			if (outputObject.content.length === 0) {
+				// Response content part added event
+				const contentPart: ResponseContentPartAddedEvent["part"] = {
+					type: "output_text",
+					text: "",
+					annotations: [],
+				};
+				outputObject.content.push(contentPart);
 
-				const outputObject = responseObject.output.at(-1);
-				if (!outputObject || outputObject.type !== "message") {
-					throw new StreamingError("Not implemented: only single output item type is supported in streaming mode.");
-				}
-
-				if (outputObject.content.length === 0) {
-					// Response content part added event
-					const contentPart: ResponseContentPartAddedEvent["part"] = {
-						type: "output_text",
-						text: "",
-						annotations: [],
-					};
-					outputObject.content.push(contentPart);
-
-					yield {
-						type: "response.content_part.added",
-						item_id: outputObject.id,
-						output_index: 0,
-						content_index: 0,
-						part: contentPart,
-						sequence_number: sequenceNumber++,
-					};
-				}
-
-				const contentPart = outputObject.content.at(-1);
-				if (!contentPart || contentPart.type !== "output_text") {
-					throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
-				}
-
-				// Add text delta
-				contentPart.text += chunk.choices[0].delta.content;
 				yield {
-					type: "response.output_text.delta",
+					type: "response.content_part.added",
 					item_id: outputObject.id,
 					output_index: 0,
 					content_index: 0,
-					delta: chunk.choices[0].delta.content,
-					sequence_number: sequenceNumber++,
+					part: contentPart,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
-			} else if (chunk.choices[0].delta.tool_calls && chunk.choices[0].delta.tool_calls.length > 0) {
-				if (chunk.choices[0].delta.tool_calls.length > 1) {
-					throw new StreamingError("Not implemented: only single tool call is supported in streaming mode.");
-				}
-
-				const lastOutput = responseObject.output.at(-1);
-				const allowedTypes = new Set(["mcp_call", "function_call", "message"]);
-				if (responseObject.output.length === 0 || !lastOutput || !allowedTypes.has(lastOutput.type)) {
-					if (!chunk.choices[0].delta.tool_calls[0].function.name) {
-						throw new StreamingError("Tool call function name is required.");
-					}
-
-					const outputObject: ResponseOutputItem.McpCall | ResponseFunctionToolCall =
-						chunk.choices[0].delta.tool_calls[0].function.name in mcpToolsMapping
-							? {
-									type: "mcp_call",
-									id: generateUniqueId("mcp_call"),
-									name: chunk.choices[0].delta.tool_calls[0].function.name,
-									server_label: mcpToolsMapping[chunk.choices[0].delta.tool_calls[0].function.name].server_label,
-									arguments: "",
-								}
-							: {
-									type: "function_call",
-									id: generateUniqueId("fc"),
-									call_id: chunk.choices[0].delta.tool_calls[0].id,
-									name: chunk.choices[0].delta.tool_calls[0].function.name,
-									arguments: "",
-								};
-					responseObject.output = [outputObject];
-
-					// Response output item added event
-					yield {
-						type: "response.output_item.added",
-						output_index: responseObject.output.length - 1,
-						item: outputObject,
-						sequence_number: sequenceNumber++,
-					};
-				}
-
-				const outputObject = responseObject.output.at(-1);
-
-				if (outputObject?.type === "mcp_call") {
-					outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
-					yield {
-						type: "response.mcp_call.arguments_delta",
-						item_id: outputObject.id as string,
-						output_index: responseObject.output.length - 1,
-						delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
-						sequence_number: sequenceNumber++,
-					};
-				} else if (outputObject?.type === "function_call") {
-					outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
-					yield {
-						type: "response.function_call_arguments.delta",
-						item_id: outputObject.id as string,
-						output_index: responseObject.output.length - 1,
-						delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
-						sequence_number: sequenceNumber++,
-					};
-				} else {
-					console.log(outputObject);
-					throw new StreamingError("Not implemented: can only support single output item type in streaming mode.");
-				}
 			}
-		}
 
-		const lastOutputItem = responseObject.output.at(-1);
+			const contentPart = outputObject.content.at(-1);
+			if (!contentPart || contentPart.type !== "output_text") {
+				throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
+			}
 
-		if (lastOutputItem) {
-			if (lastOutputItem?.type === "message") {
-				const contentPart = lastOutputItem.content.at(-1);
-				if (contentPart?.type === "output_text") {
-					yield {
-						type: "response.output_text.done",
-						item_id: lastOutputItem.id,
-						output_index: responseObject.output.length - 1,
-						content_index: lastOutputItem.content.length - 1,
-						text: contentPart.text,
-						sequence_number: sequenceNumber++,
-					};
+			// Add text delta
+			contentPart.text += chunk.choices[0].delta.content;
+			yield {
+				type: "response.output_text.delta",
+				item_id: outputObject.id,
+				output_index: 0,
+				content_index: 0,
+				delta: chunk.choices[0].delta.content,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
+		} else if (chunk.choices[0].delta.tool_calls && chunk.choices[0].delta.tool_calls.length > 0) {
+			if (chunk.choices[0].delta.tool_calls.length > 1) {
+				throw new StreamingError("Not implemented: only single tool call is supported in streaming mode.");
+			}
 
-					yield {
-						type: "response.content_part.done",
-						item_id: lastOutputItem.id,
-						output_index: responseObject.output.length - 1,
-						content_index: lastOutputItem.content.length - 1,
-						part: contentPart,
-						sequence_number: sequenceNumber++,
-					};
-				} else {
-					throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
+			const lastOutput = responseObject.output.at(-1);
+			const allowedTypes = new Set(["mcp_call", "function_call", "message"]);
+			if (responseObject.output.length === 0 || !lastOutput || !allowedTypes.has(lastOutput.type)) {
+				if (!chunk.choices[0].delta.tool_calls[0].function.name) {
+					throw new StreamingError("Tool call function name is required.");
 				}
 
-				// Response output item done event
-				lastOutputItem.status = "completed";
-				yield {
-					type: "response.output_item.done",
-					output_index: responseObject.output.length - 1,
-					item: lastOutputItem,
-					sequence_number: sequenceNumber++,
-				};
-			} else if (lastOutputItem?.type === "function_call") {
-				if (!lastOutputItem.id) {
-					throw new StreamingError("Function call id is required.");
-				}
+				const outputObject: ResponseOutputItem.McpCall | ResponseFunctionToolCall =
+					chunk.choices[0].delta.tool_calls[0].function.name in mcpToolsMapping
+						? {
+								type: "mcp_call",
+								id: generateUniqueId("mcp_call"),
+								name: chunk.choices[0].delta.tool_calls[0].function.name,
+								server_label: mcpToolsMapping[chunk.choices[0].delta.tool_calls[0].function.name].server_label,
+								arguments: "",
+							}
+						: {
+								type: "function_call",
+								id: generateUniqueId("fc"),
+								call_id: chunk.choices[0].delta.tool_calls[0].id,
+								name: chunk.choices[0].delta.tool_calls[0].function.name,
+								arguments: "",
+							};
+				responseObject.output = [outputObject];
 
+				// Response output item added event
 				yield {
-					type: "response.function_call_arguments.done",
-					item_id: lastOutputItem.id,
+					type: "response.output_item.added",
 					output_index: responseObject.output.length - 1,
-					arguments: lastOutputItem.arguments,
-					sequence_number: sequenceNumber++,
+					item: outputObject,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
+			}
 
-				lastOutputItem.status = "completed";
+			const outputObject = responseObject.output.at(-1);
+
+			if (outputObject?.type === "mcp_call") {
+				outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
 				yield {
-					type: "response.output_item.done",
+					type: "response.mcp_call.arguments_delta",
+					item_id: outputObject.id as string,
 					output_index: responseObject.output.length - 1,
-					item: lastOutputItem,
-					sequence_number: sequenceNumber++,
+					delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
-			} else if (lastOutputItem?.type === "mcp_call") {
+			} else if (outputObject?.type === "function_call") {
+				outputObject.arguments += chunk.choices[0].delta.tool_calls[0].function.arguments;
 				yield {
-					type: "response.mcp_call.arguments_done",
-					item_id: lastOutputItem.id as string,
+					type: "response.function_call_arguments.delta",
+					item_id: outputObject.id as string,
 					output_index: responseObject.output.length - 1,
-					arguments: lastOutputItem.arguments,
-					sequence_number: sequenceNumber++,
+					delta: chunk.choices[0].delta.tool_calls[0].function.arguments,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			} else {
-				throw new StreamingError("Not implemented: only message output is supported in streaming mode.");
+				console.log(outputObject);
+				throw new StreamingError("Not implemented: can only support single output item type in streaming mode.");
 			}
 		}
+	}
 
-		// Response completed event
-		yield {
-			type: "response.completed",
-			response: responseObject as Response,
-			sequence_number: sequenceNumber++,
-		};
-		return;
-	} catch (streamError) {
-		console.error("Error in streaming chat completion:", streamError);
+	const lastOutputItem = responseObject.output.at(-1);
 
-		let message = "An error occurred while streaming from inference server.";
-		if (streamError instanceof StreamingError) {
-			message = streamError.message;
-		} else if (
-			typeof streamError === "object" &&
-			streamError &&
-			"message" in streamError &&
-			typeof streamError.message === "string"
-		) {
-			message = streamError.message;
+	if (lastOutputItem) {
+		if (lastOutputItem?.type === "message") {
+			const contentPart = lastOutputItem.content.at(-1);
+			if (contentPart?.type === "output_text") {
+				yield {
+					type: "response.output_text.done",
+					item_id: lastOutputItem.id,
+					output_index: responseObject.output.length - 1,
+					content_index: lastOutputItem.content.length - 1,
+					text: contentPart.text,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+
+				yield {
+					type: "response.content_part.done",
+					item_id: lastOutputItem.id,
+					output_index: responseObject.output.length - 1,
+					content_index: lastOutputItem.content.length - 1,
+					part: contentPart,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+			} else {
+				throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
+			}
+
+			// Response output item done event
+			lastOutputItem.status = "completed";
+			yield {
+				type: "response.output_item.done",
+				output_index: responseObject.output.length - 1,
+				item: lastOutputItem,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
+		} else if (lastOutputItem?.type === "function_call") {
+			if (!lastOutputItem.id) {
+				throw new StreamingError("Function call id is required.");
+			}
+
+			yield {
+				type: "response.function_call_arguments.done",
+				item_id: lastOutputItem.id,
+				output_index: responseObject.output.length - 1,
+				arguments: lastOutputItem.arguments,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
+
+			lastOutputItem.status = "completed";
+			yield {
+				type: "response.output_item.done",
+				output_index: responseObject.output.length - 1,
+				item: lastOutputItem,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
+		} else if (lastOutputItem?.type === "mcp_call") {
+			yield {
+				type: "response.mcp_call.arguments_done",
+				item_id: lastOutputItem.id as string,
+				output_index: responseObject.output.length - 1,
+				arguments: lastOutputItem.arguments,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
+		} else {
+			throw new StreamingError("Not implemented: only message output is supported in streaming mode.");
 		}
-		responseObject.status = "failed";
-		responseObject.error = {
-			code: "server_error",
-			message,
-		};
-		yield {
-			type: "response.failed",
-			response: responseObject as Response,
-			sequence_number: sequenceNumber++,
-		};
-		return;
 	}
 }
 
@@ -700,108 +731,55 @@ async function* callApprovedMCPToolStream(
 	mcpToolsMapping: Record<string, McpServerParams>,
 	responseObject: IncompleteResponse
 ): AsyncGenerator<ResponseStreamEvent> {
-	let sequenceNumber = 0;
-
-	// Response created event
-	yield {
-		type: "response.created",
-		response: responseObject as Response,
-		sequence_number: sequenceNumber++,
-	};
-
-	// Response in progress event
-	yield {
-		type: "response.in_progress",
-		response: responseObject as Response,
-		sequence_number: sequenceNumber++,
-	};
-
-	if (approvalRequest) {
-		const outputObject: ResponseOutputItem.McpCall = {
-			type: "mcp_call",
-			id: generateUniqueId("mcp_call"),
-			name: approvalRequest.name,
-			server_label: approvalRequest.server_label,
-			arguments: approvalRequest.arguments,
-		};
-		responseObject.output.push(outputObject);
-
-		// Response output item added event
-		yield {
-			type: "response.output_item.added",
-			output_index: responseObject.output.length - 1,
-			item: outputObject,
-			sequence_number: sequenceNumber++,
-		};
-
-		yield {
-			type: "response.mcp_call.in_progress",
-			item_id: outputObject.id,
-			output_index: responseObject.output.length - 1,
-			sequence_number: sequenceNumber++,
-		};
-
-		const toolParams = mcpToolsMapping[approvalRequest.name];
-		const toolResult = await callMcpTool(
-			toolParams,
-			approvalRequest.name,
-			toolParams.server_label,
-			approvalRequest.arguments
-		);
-
-		if (toolResult.error) {
-			outputObject.error = toolResult.error;
-			yield {
-				type: "response.mcp_call.failed",
-				sequence_number: sequenceNumber++,
-			};
-		} else {
-			outputObject.output = toolResult.output;
-			yield {
-				type: "response.mcp_call.completed",
-				sequence_number: sequenceNumber++,
-			};
-		}
-		yield {
-			type: "response.output_item.done",
-			output_index: responseObject.output.length - 1,
-			item: outputObject,
-			sequence_number: sequenceNumber++,
-		};
-
-		if (outputObject.error) {
-			responseObject.status = "failed";
-			responseObject.error = {
-				code: "server_error",
-				message: outputObject.error,
-			};
-			yield {
-				type: "response.failed",
-				response: responseObject as Response,
-				sequence_number: sequenceNumber++,
-			};
-		} else {
-			responseObject.status = "completed";
-			yield {
-				type: "response.completed",
-				response: responseObject as Response,
-				sequence_number: sequenceNumber++,
-			};
-		}
-		return;
-	} else {
-		const errorMessage = `MCP approval response for approval request '${approval_request_id}' not found`;
-		console.error(errorMessage);
-		responseObject.status = "failed";
-		responseObject.error = {
-			code: "server_error",
-			message: errorMessage,
-		};
-		yield {
-			type: "response.failed",
-			response: responseObject as Response,
-			sequence_number: sequenceNumber++,
-		};
-		return;
+	if (!approvalRequest) {
+		throw new Error(`MCP approval request for approval request '${approval_request_id}' not found`);
 	}
+
+	const outputObject: ResponseOutputItem.McpCall = {
+		type: "mcp_call",
+		id: generateUniqueId("mcp_call"),
+		name: approvalRequest.name,
+		server_label: approvalRequest.server_label,
+		arguments: approvalRequest.arguments,
+	};
+	responseObject.output.push(outputObject);
+
+	// Response output item added event
+	yield {
+		type: "response.output_item.added",
+		output_index: responseObject.output.length - 1,
+		item: outputObject,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+
+	yield {
+		type: "response.mcp_call.in_progress",
+		item_id: outputObject.id,
+		output_index: responseObject.output.length - 1,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+
+	const toolParams = mcpToolsMapping[approvalRequest.name];
+	const toolResult = await callMcpTool(toolParams, approvalRequest.name, approvalRequest.arguments);
+
+	if (toolResult.error) {
+		outputObject.error = toolResult.error;
+		yield {
+			type: "response.mcp_call.failed",
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		};
+		throw new Error(outputObject.error);
+	}
+
+	outputObject.output = toolResult.output;
+	yield {
+		type: "response.mcp_call.completed",
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+	yield {
+		type: "response.output_item.done",
+		output_index: responseObject.output.length - 1,
+		item: outputObject,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
 }
