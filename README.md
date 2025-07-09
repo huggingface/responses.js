@@ -64,6 +64,27 @@ pnpm run example function
 pnpm run example function_streaming
 ```
 
+## 🧪 Testing
+
+### Important Notes
+
+- Server must be running (`pnpm dev`) on `http://localhost:3000`
+- `HF_TOKEN` environment variable set with your Hugging Face token
+- Tests use real inference providers and will incur costs
+- Tests are not run in CI due to billing requirements
+
+### Running Tests
+
+```bash
+# Run all tests
+pnpm test
+
+# Run specific test patterns
+pnpm test --grep "streaming"
+pnpm test --grep "function"
+pnpm test --grep "structured"
+```
+
 ### Interactive Demo UI
 
 Experience the API through our interactive web interface, adapted from the [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app).

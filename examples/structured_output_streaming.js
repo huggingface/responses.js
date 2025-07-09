@@ -9,30 +9,18 @@ const CalendarEvent = z.object({
 });
 
 const openai = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: process.env.HF_TOKEN });
-const stream = openai.responses
-	.stream({
-		model: "nebius@Qwen/Qwen2.5-VL-72B-Instruct",
-		instructions: "Extract the event information.",
-		input: "Alice and Bob are going to a science fair on Friday.",
-		text: {
-			format: zodTextFormat(CalendarEvent, "calendar_event"),
-		},
-	})
-	.on("response.refusal.delta", (event) => {
-		process.stdout.write(event.delta);
-	})
-	.on("response.output_text.delta", (event) => {
-		process.stdout.write(event.delta);
-	})
-	.on("response.output_text.done", () => {
-		process.stdout.write("\n");
-	})
-	.on("response.error", (event) => {
-		console.error(event.error);
-	})
-	.on("response.completed", (event) => {
-		console.log(event.response);
-	});
+const stream = openai.responses.stream({
+	model: "nebius@Qwen/Qwen2.5-VL-72B-Instruct",
+	instructions: "Extract the event information.",
+	input: "Alice and Bob are going to a science fair on Friday.",
+	text: {
+		format: zodTextFormat(CalendarEvent, "calendar_event"),
+	},
+});
+
+for await (const event of stream) {
+	console.log(event);
+}
 
 const result = await stream.finalResponse();
 console.log(result.output_parsed);

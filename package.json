@@ -40,7 +40,8 @@
 		"demo:lint": "cd demo && npm run lint",
 		"demo:format": "cd demo && npm run format",
 		"demo:start": "cd demo && npm run start",
-		"deploy:spaces": "./push_to_space.sh"
+		"deploy:spaces": "./push_to_space.sh",
+		"test": "mocha --timeout 20000 \"tests/**/*.test.js\""
 	},
 	"files": [
 		"src",
@@ -72,6 +73,7 @@
 		"eslint": "^9.30.1",
 		"eslint-config-prettier": "^10.1.5",
 		"eslint-plugin-prettier": "^5.5.1",
+		"mocha": "^11.7.1",
 		"prettier": "^3.6.2",
 		"tsup": "^8.5.0",
 		"tsx": "^4.20.3",
