@@ -407,6 +407,21 @@ async function* listMcpToolsStream(
 	tool: McpServerParams,
 	responseObject: IncompleteResponse
 ): AsyncGenerator<ResponseStreamEvent> {
+	const outputObject: ResponseOutputItem.McpListTools = {
+		id: generateUniqueId("mcp_list_tools"),
+		type: "mcp_list_tools",
+		server_label: tool.server_label,
+		tools: [],
+	};
+	responseObject.output.push(outputObject);
+
+	yield {
+		type: "response.output_item.added",
+		output_index: responseObject.output.length - 1,
+		item: outputObject,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+
 	yield {
 		type: "response.mcp_list_tools.in_progress",
 		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
@@ -419,17 +434,18 @@ async function* listMcpToolsStream(
 			type: "response.mcp_list_tools.completed",
 			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 		};
-		responseObject.output.push({
-			id: generateUniqueId("mcp_list_tools"),
-			type: "mcp_list_tools",
-			server_label: tool.server_label,
-			tools: mcpTools.tools.map((mcpTool) => ({
-				input_schema: mcpTool.inputSchema,
-				name: mcpTool.name,
-				annotations: mcpTool.annotations,
-				description: mcpTool.description,
-			})),
-		});
+		outputObject.tools = mcpTools.tools.map((mcpTool) => ({
+			input_schema: mcpTool.inputSchema,
+			name: mcpTool.name,
+			annotations: mcpTool.annotations,
+			description: mcpTool.description,
+		}));
+		yield {
+			type: "response.output_item.done",
+			output_index: responseObject.output.length - 1,
+			item: outputObject,
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		}
 	} catch (error) {
 		const errorMessage = `Failed to list tools from MCP server '${tool.server_label}': ${error instanceof Error ? error.message : "Unknown error"}`;
 		console.error(errorMessage);
