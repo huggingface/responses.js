@@ -377,6 +377,13 @@ async function* innerRunStream(
 				const approvalRequest = req.body.input.find(
 					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
 				) as McpApprovalRequestParams | undefined;
+				const mcpCallId = "mcp_" + item.approval_request_id.split("_")[1];
+				const mcpCall = req.body.input.find((i) => i.type === "mcp_call" && i.id === mcpCallId);
+                if (mcpCall) {
+					// MCP call for that approval request has already been made, so we can skip it
+					continue
+				}
+
 				for await (const event of callApprovedMCPToolStream(
 					item.approval_request_id,
 					approvalRequest,
@@ -770,9 +777,12 @@ async function* callApprovedMCPToolStream(
 		throw new Error(`MCP approval request '${approval_request_id}' not found`);
 	}
 
+	// Let's use the same ID so that we can double-check if the MCP has already been made or not
+	const mcpCallId = "mcp_" + approval_request_id.split("_")[1];
+
 	const outputObject: ResponseOutputItem.McpCall = {
 		type: "mcp_call",
-		id: generateUniqueId("mcp"),
+		id: mcpCallId,
 		name: approvalRequest.name,
 		server_label: approvalRequest.server_label,
 		arguments: approvalRequest.arguments,
