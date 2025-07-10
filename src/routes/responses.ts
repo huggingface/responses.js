@@ -496,6 +496,7 @@ async function* handleOneTurnStream(
 		}
 
 		const delta = chunk.choices[0].delta;
+
 		if (delta.content) {
 			let currentOutputItem = responseObject.output.at(-1);
 
@@ -600,19 +601,21 @@ async function* handleOneTurnStream(
 				}
 			}
 
-			// Current item is necessarily a tool call
-			currentOutputItem = responseObject.output.at(-1) as ResponseOutputItem.McpCall | ResponseFunctionToolCall;
-			currentOutputItem.arguments += delta.tool_calls[0].function.arguments;
-			yield {
-				type:
-					currentOutputItem.type === "mcp_call"
-						? ("response.mcp_call_arguments.delta" as "response.mcp_call.arguments_delta") // bug workaround (see https://github.com/openai/openai-node/issues/1562)
-						: "response.function_call_arguments.delta",
-				item_id: currentOutputItem.id as string,
-				output_index: responseObject.output.length - 1,
-				delta: delta.tool_calls[0].function.arguments,
-				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-			};
+			if (delta.tool_calls[0].function.arguments) {
+				// Current item is necessarily a tool call
+				currentOutputItem = responseObject.output.at(-1) as ResponseOutputItem.McpCall | ResponseFunctionToolCall;
+				currentOutputItem.arguments += delta.tool_calls[0].function.arguments;
+				yield {
+					type:
+						currentOutputItem.type === "mcp_call"
+							? ("response.mcp_call_arguments.delta" as "response.mcp_call.arguments_delta") // bug workaround (see https://github.com/openai/openai-node/issues/1562)
+							: "response.function_call_arguments.delta",
+					item_id: currentOutputItem.id as string,
+					output_index: responseObject.output.length - 1,
+					delta: delta.tool_calls[0].function.arguments,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+			}
 		}
 	}
 
@@ -764,14 +767,14 @@ async function* callApprovedMCPToolStream(
 			type: "response.mcp_call.failed",
 			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 		};
-		throw new Error(outputObject.error);
+	} else {
+		outputObject.output = toolResult.output;
+		yield {
+			type: "response.mcp_call.completed",
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		};
 	}
 
-	outputObject.output = toolResult.output;
-	yield {
-		type: "response.mcp_call.completed",
-		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-	};
 	yield {
 		type: "response.output_item.done",
 		output_index: responseObject.output.length - 1,
@@ -821,7 +824,6 @@ async function* handleMCPToolCall(
 					type: "response.mcp_call.failed",
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
-				throw new Error(toolCall.error);
 			} else {
 				toolCall.output = toolResult.output;
 				yield {
