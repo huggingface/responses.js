@@ -230,7 +230,6 @@ async function* innerRunStream(
 		tools = undefined;
 	}
 
-
 	// Prepare payload for the LLM
 
 	// Resolve model and provider
@@ -379,9 +378,9 @@ async function* innerRunStream(
 				) as McpApprovalRequestParams | undefined;
 				const mcpCallId = "mcp_" + item.approval_request_id.split("_")[1];
 				const mcpCall = req.body.input.find((i) => i.type === "mcp_call" && i.id === mcpCallId);
-                if (mcpCall) {
+				if (mcpCall) {
 					// MCP call for that approval request has already been made, so we can skip it
-					continue
+					continue;
 				}
 
 				for await (const event of callApprovedMCPToolStream(
@@ -397,7 +396,6 @@ async function* innerRunStream(
 			}
 		}
 	}
-
 
 	// Call the LLM until no new message is added to the payload.
 	// New messages can be added if the LLM calls an MCP tool that is automatically run.
@@ -746,7 +744,11 @@ async function* handleOneTurnStream(
 				{
 					role: "tool",
 					tool_call_id: lastOutputItem.id,
-					content: lastOutputItem.output ? lastOutputItem.output :  lastOutputItem.error ?  `Error: ${lastOutputItem.error}` : "",
+					content: lastOutputItem.output
+						? lastOutputItem.output
+						: lastOutputItem.error
+							? `Error: ${lastOutputItem.error}`
+							: "",
 				}
 			);
 		} else if (lastOutputItem?.type === "mcp_approval_request") {
