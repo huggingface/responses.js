@@ -230,34 +230,8 @@ async function* innerRunStream(
 		tools = undefined;
 	}
 
-	// If MCP approval requests => execute them and return (no LLM call)
-	if (Array.isArray(req.body.input)) {
-		for (const item of req.body.input) {
-			// Note: currently supporting only 1 mcp_approval_response per request
-			let shouldStop = false;
-			if (item.type === "mcp_approval_response" && item.approve) {
-				const approvalRequest = req.body.input.find(
-					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
-				) as McpApprovalRequestParams | undefined;
-				for await (const event of callApprovedMCPToolStream(
-					item.approval_request_id,
-					approvalRequest,
-					mcpToolsMapping,
-					responseObject
-				)) {
-					yield event;
-				}
-				shouldStop = true;
-			}
-			if (shouldStop) {
-				// stop if at least one approval request is processed
-				break;
-			}
-		}
-	}
 
-	// At this point, we have all tools and we know we want to call the LLM
-	// Let's prepare the payload and make the call!
+	// Prepare payload for the LLM
 
 	// Resolve model and provider
 	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
@@ -395,6 +369,27 @@ async function* innerRunStream(
 		tools,
 		top_p: req.body.top_p,
 	};
+
+	// If MCP approval requests => execute them and return (no LLM call)
+	if (Array.isArray(req.body.input)) {
+		for (const item of req.body.input) {
+			if (item.type === "mcp_approval_response" && item.approve) {
+				const approvalRequest = req.body.input.find(
+					(i) => i.type === "mcp_approval_request" && i.id === item.approval_request_id
+				) as McpApprovalRequestParams | undefined;
+				for await (const event of callApprovedMCPToolStream(
+					item.approval_request_id,
+					approvalRequest,
+					mcpToolsMapping,
+					responseObject,
+					payload
+				)) {
+					yield event;
+				}
+			}
+		}
+	}
+
 
 	// Call the LLM until no new message is added to the payload.
 	// New messages can be added if the LLM calls an MCP tool that is automatically run.
@@ -743,7 +738,7 @@ async function* handleOneTurnStream(
 				{
 					role: "tool",
 					tool_call_id: lastOutputItem.id,
-					content: lastOutputItem.output ?? "",
+					content: lastOutputItem.output ? lastOutputItem.output :  lastOutputItem.error ?  `Error: ${lastOutputItem.error}` : "",
 				}
 			);
 		} else if (lastOutputItem?.type === "mcp_approval_request") {
@@ -768,7 +763,8 @@ async function* callApprovedMCPToolStream(
 	approval_request_id: string,
 	approvalRequest: McpApprovalRequestParams | undefined,
 	mcpToolsMapping: Record<string, McpServerParams>,
-	responseObject: IncompleteResponse
+	responseObject: IncompleteResponse,
+	payload: ChatCompletionInput
 ): AsyncGenerator<ResponseStreamEvent> {
 	if (!approvalRequest) {
 		throw new Error(`MCP approval request '${approval_request_id}' not found`);
@@ -821,6 +817,30 @@ async function* callApprovedMCPToolStream(
 		item: outputObject,
 		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 	};
+
+	// Updating the payload for next LLM call
+	payload.messages.push(
+		{
+			role: "assistant",
+			tool_calls: [
+				{
+					id: outputObject.id,
+					type: "function",
+					function: {
+						name: outputObject.name,
+						arguments: outputObject.arguments,
+						// Hacky: type is not correct in inference.js. Will fix it but in the meantime we need to cast it.
+						// TODO: fix it in the inference.js package. Should be "arguments" and not "parameters".
+					} as unknown as ChatCompletionInputFunctionDefinition,
+				},
+			],
+		},
+		{
+			role: "tool",
+			tool_call_id: outputObject.id,
+			content: outputObject.output ? outputObject.output : outputObject.error ? `Error: ${outputObject.error}` : "",
+		}
+	);
 }
 
 function requiresApproval(toolName: string, mcpToolsMapping: Record<string, McpServerParams>): boolean {
