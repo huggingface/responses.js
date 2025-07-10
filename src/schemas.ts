@@ -125,7 +125,7 @@ export const createResponseParamsSchema = z.object({
 					output: z.string(),
 					type: z.literal("function_call_output"),
 					id: z.string().optional(),
-					status: z.enum(["in_progress", "completed", "incomplete"]),
+					status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
 				}),
 				z.object({
 					type: z.literal("mcp_list_tools"),
