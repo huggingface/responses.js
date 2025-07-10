@@ -360,9 +360,9 @@ async function* innerRunStream(
 	// Prepare payload for the LLM
 	const payload: ChatCompletionInput = {
 		// main params
-		model: model,
-		provider: provider,
-		messages: messages,
+		model,
+		provider,
+		messages,
 		stream: req.body.stream,
 		// options
 		max_tokens: req.body.max_output_tokens === null ? undefined : req.body.max_output_tokens,
@@ -565,23 +565,39 @@ async function* handleOneTurnStream(
 
 			let currentOutputItem = responseObject.output.at(-1);
 			if (delta.tool_calls[0].function.name) {
+				const functionName = delta.tool_calls[0].function.name;
 				// Tool call with a name => new tool call
-				const newOutputObject: ResponseOutputItem.McpCall | ResponseFunctionToolCall =
-					delta.tool_calls[0].function.name in mcpToolsMapping
-						? {
-								type: "mcp_call",
-								id: generateUniqueId("mcp"),
-								name: delta.tool_calls[0].function.name,
-								server_label: mcpToolsMapping[delta.tool_calls[0].function.name].server_label,
-								arguments: "",
-							}
-						: {
-								type: "function_call",
-								id: generateUniqueId("fc"),
-								call_id: delta.tool_calls[0].id,
-								name: delta.tool_calls[0].function.name,
-								arguments: "",
-							};
+				let newOutputObject:
+					| ResponseOutputItem.McpCall
+					| ResponseFunctionToolCall
+					| ResponseOutputItem.McpApprovalRequest;
+				if (functionName in mcpToolsMapping) {
+					if (requiresApproval(functionName, mcpToolsMapping)) {
+						newOutputObject = {
+							id: generateUniqueId("mcpr"),
+							type: "mcp_approval_request",
+							name: functionName,
+							server_label: mcpToolsMapping[functionName].server_label,
+							arguments: "",
+						};
+					} else {
+						newOutputObject = {
+							type: "mcp_call",
+							id: generateUniqueId("mcp"),
+							name: functionName,
+							server_label: mcpToolsMapping[functionName].server_label,
+							arguments: "",
+						};
+					}
+				} else {
+					newOutputObject = {
+						type: "function_call",
+						id: generateUniqueId("fc"),
+						call_id: delta.tool_calls[0].id,
+						name: functionName,
+						arguments: "",
+					};
+				}
 
 				// Response output item added event
 				responseObject.output.push(newOutputObject);
@@ -603,18 +619,23 @@ async function* handleOneTurnStream(
 
 			if (delta.tool_calls[0].function.arguments) {
 				// Current item is necessarily a tool call
-				currentOutputItem = responseObject.output.at(-1) as ResponseOutputItem.McpCall | ResponseFunctionToolCall;
+				currentOutputItem = responseObject.output.at(-1) as
+					| ResponseOutputItem.McpCall
+					| ResponseFunctionToolCall
+					| ResponseOutputItem.McpApprovalRequest;
 				currentOutputItem.arguments += delta.tool_calls[0].function.arguments;
-				yield {
-					type:
-						currentOutputItem.type === "mcp_call"
-							? ("response.mcp_call_arguments.delta" as "response.mcp_call.arguments_delta") // bug workaround (see https://github.com/openai/openai-node/issues/1562)
-							: "response.function_call_arguments.delta",
-					item_id: currentOutputItem.id as string,
-					output_index: responseObject.output.length - 1,
-					delta: delta.tool_calls[0].function.arguments,
-					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-				};
+				if (currentOutputItem.type === "mcp_call" || currentOutputItem.type === "function_call") {
+					yield {
+						type:
+							currentOutputItem.type === "mcp_call"
+								? ("response.mcp_call_arguments.delta" as "response.mcp_call.arguments_delta") // bug workaround (see https://github.com/openai/openai-node/issues/1562)
+								: "response.function_call_arguments.delta",
+						item_id: currentOutputItem.id as string,
+						output_index: responseObject.output.length - 1,
+						delta: delta.tool_calls[0].function.arguments,
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+					};
+				}
 			}
 		}
 	}
@@ -679,8 +700,20 @@ async function* handleOneTurnStream(
 			};
 
 			// Call MCP tool
-			for await (const event of handleMCPToolCall(lastOutputItem, mcpToolsMapping)) {
-				yield event;
+			const toolParams = mcpToolsMapping[lastOutputItem.name];
+			const toolResult = await callMcpTool(toolParams, lastOutputItem.name, lastOutputItem.arguments);
+			if (toolResult.error) {
+				lastOutputItem.error = toolResult.error;
+				yield {
+					type: "response.mcp_call.failed",
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+			} else {
+				lastOutputItem.output = toolResult.output;
+				yield {
+					type: "response.mcp_call.completed",
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
 			}
 
 			yield {
@@ -713,6 +746,13 @@ async function* handleOneTurnStream(
 					content: lastOutputItem.output ?? "",
 				}
 			);
+		} else if (lastOutputItem?.type === "mcp_approval_request") {
+			yield {
+				type: "response.output_item.done",
+				output_index: responseObject.output.length - 1,
+				item: lastOutputItem,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
 		} else {
 			throw new StreamingError(
 				`Not implemented: expected message, function_call, or mcp_call, got ${lastOutputItem?.type}`
@@ -783,54 +823,15 @@ async function* callApprovedMCPToolStream(
 	};
 }
 
-async function* handleMCPToolCall(
-	toolCall: ResponseOutputItem.McpCall,
-	mcpToolsMapping: Record<string, McpServerParams>
-): AsyncGenerator<ResponseStreamEvent> {
-	const toolParams = mcpToolsMapping[toolCall.name];
-	if (toolParams) {
-		const approvalRequired =
-			toolParams.require_approval === "always"
+function requiresApproval(toolName: string, mcpToolsMapping: Record<string, McpServerParams>): boolean {
+	const toolParams = mcpToolsMapping[toolName];
+	return toolParams.require_approval === "always"
+		? true
+		: toolParams.require_approval === "never"
+			? false
+			: toolParams.require_approval.always?.tool_names?.includes(toolName)
 				? true
-				: toolParams.require_approval === "never"
+				: toolParams.require_approval.never?.tool_names?.includes(toolName)
 					? false
-					: toolParams.require_approval.always?.tool_names?.includes(toolCall.name)
-						? true
-						: toolParams.require_approval.never?.tool_names?.includes(toolCall.name)
-							? false
-							: true; // behavior is undefined in specs, let's default to
-
-		if (approvalRequired) {
-			const approvalRequest: ResponseOutputItem.McpApprovalRequest = {
-				type: "mcp_approval_request",
-				id: generateUniqueId("mcp_approval_request"),
-				name: toolCall.name,
-				server_label: toolParams.server_label,
-				arguments: toolCall.arguments,
-			};
-			// TODO: check how openai handles approval requests
-			// responseObject.output.push(approvalRequest);
-			// yield {
-			// 	type: "response.output_item.added",
-			// 	output_index: responseObject.output.length,
-			// 	item: approvalRequest,
-			// 	sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-			// };
-		} else {
-			const toolResult = await callMcpTool(toolParams, toolCall.name, toolCall.arguments);
-			if (toolResult.error) {
-				toolCall.error = toolResult.error;
-				yield {
-					type: "response.mcp_call.failed",
-					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-				};
-			} else {
-				toolCall.output = toolResult.output;
-				yield {
-					type: "response.mcp_call.completed",
-					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-				};
-			}
-		}
-	}
+					: true; // behavior is undefined in specs, let's default to true
 }
