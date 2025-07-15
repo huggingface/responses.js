@@ -233,8 +233,8 @@ async function* innerRunStream(
 	// Prepare payload for the LLM
 
 	// Resolve model and provider
-	const model = req.body.model.includes("@") ? req.body.model.split("@")[1] : req.body.model;
-	const provider = req.body.model.includes("@") ? req.body.model.split("@")[0] : undefined;
+	const model = req.body.model.includes(":") ? req.body.model.split(":")[0] : req.body.model;
+	const provider = req.body.model.includes(":") ? req.body.model.split(":")[1] : undefined;
 
 	// Format input to Chat Completion format
 	const messages: ChatCompletionInputMessage[] = req.body.instructions
