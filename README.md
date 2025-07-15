@@ -99,7 +99,7 @@ Experience the API through our interactive web interface, adapted from the [open
 ```bash
 # Create demo/.env
 cat > demo/.env << EOF
-MODEL="cohere@CohereLabs/c4ai-command-a-03-2025"
+MODEL="CohereLabs/c4ai-command-a-03-2025"
 OPENAI_BASE_URL=http://localhost:3000/v1
 OPENAI_API_KEY=${HF_TOKEN:-<your-huggingface-token>}
 EOF
