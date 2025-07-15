@@ -185,6 +185,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Based on OpenAI's [Responses API specification](https://platform.openai.com/docs/api-reference/responses)
-- Built on top of [OpenAI's nodejs client](https://github.com/openai/openai-node)
+- Built on top of [OpenAI's nodejs client's Types](https://github.com/openai/openai-node)
 - Demo UI adapted from [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app)
 - Built on top of [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/index)
