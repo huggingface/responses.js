@@ -3,7 +3,7 @@ import OpenAI from "openai";
 const openai = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: process.env.HF_TOKEN });
 
 const response = await openai.responses.create({
-	model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+	model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 	input: "how does tiktoken work?",
 	tools: [
 		{

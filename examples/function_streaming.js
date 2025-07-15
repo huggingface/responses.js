@@ -21,7 +21,7 @@ const tools = [
 ];
 
 const stream = await openai.responses.create({
-	model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+	model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 	input: [{ role: "user", content: "What's the weather like in Paris today?" }],
 	tools,
 	stream: true,

@@ -11,7 +11,7 @@ const CalendarEvent = z.object({
 });
 
 const response = await openai.responses.parse({
-	model: "novita@meta-llama/Meta-Llama-3-70B-Instruct",
+	model: "meta-llama/Meta-Llama-3-70B-Instruct:novita",
 	instructions: "Extract the event information.",
 	input: "Alice and Bob are going to a science fair on Friday.",
 	text: {

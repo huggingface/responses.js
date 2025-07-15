@@ -621,7 +621,7 @@ tools = [
 ]
 
 response = client.responses.create(
-    model="cerebras@meta-llama/Llama-3.3-70B-Instruct",
+    model="meta-llama/Llama-3.3-70B-Instruct:cerebras",
     tools=tools,
     input="What is the weather like in Boston today?",
     tool_choice="auto",
@@ -645,7 +645,7 @@ class CalendarEvent(BaseModel):
     participants: list[str]
 
 response = client.responses.parse(
-    model="novita@meta-llama/Meta-Llama-3-70B-Instruct",
+    model="meta-llama/Meta-Llama-3-70B-Instruct:novita",
     input=[
         {"role": "system", "content": "Extract the event information."},
         {
@@ -668,7 +668,7 @@ client = OpenAI(
 )
 
 response = client.responses.create(
-    model="cerebras@meta-llama/Llama-3.3-70B-Instruct",
+    model="meta-llama/Llama-3.3-70B-Instruct:cerebras",
     input="how does tiktoken work?",
     tools=[
         {
