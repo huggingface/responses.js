@@ -2,13 +2,7 @@ import { type Response as ExpressResponse } from "express";
 import { type ValidatedRequest } from "../middleware/validation.js";
 import type { CreateResponseParams, McpServerParams, McpApprovalRequestParams } from "../schemas.js";
 import { generateUniqueId } from "../lib/generateUniqueId.js";
-import { InferenceClient } from "@huggingface/inference";
-import type {
-	ChatCompletionInputMessage,
-	ChatCompletionInputMessageChunkType,
-	ChatCompletionInput,
-} from "@huggingface/tasks";
-
+import { OpenAI } from "openai";
 import type {
 	Response,
 	ResponseStreamEvent,
@@ -18,9 +12,11 @@ import type {
 	ResponseOutputItem,
 } from "openai/resources/responses/responses";
 import type {
-	ChatCompletionInputFunctionDefinition,
-	ChatCompletionInputTool,
-} from "@huggingface/tasks/dist/commonjs/tasks/chat-completion/inference.js";
+	ChatCompletionCreateParamsStreaming,
+	ChatCompletionMessageParam,
+	ChatCompletionTool,
+} from "openai/resources/chat/completions.js";
+import type { FunctionParameters } from "openai/resources/shared.js";
 import { callMcpTool, connectMcpServer } from "../mcp.js";
 
 class StreamingError extends Error {
@@ -163,7 +159,7 @@ async function* innerRunStream(
 	}
 
 	// List MCP tools from server (if required) + prepare tools for the LLM
-	let tools: ChatCompletionInputTool[] | undefined = [];
+	let tools: ChatCompletionTool[] | undefined = [];
 	const mcpToolsMapping: Record<string, McpServerParams> = {};
 	if (req.body.tools) {
 		for (const tool of req.body.tools) {
@@ -213,7 +209,7 @@ async function* innerRunStream(
 									type: "function" as const,
 									function: {
 										name: mcpTool.name,
-										parameters: mcpTool.input_schema,
+										parameters: mcpTool.input_schema as FunctionParameters,
 										description: mcpTool.description ?? undefined,
 									},
 								});
@@ -232,12 +228,8 @@ async function* innerRunStream(
 
 	// Prepare payload for the LLM
 
-	// Resolve model and provider
-	const model = req.body.model.includes(":") ? req.body.model.split(":")[0] : req.body.model;
-	const provider = req.body.model.includes(":") ? req.body.model.split(":")[1] : undefined;
-
 	// Format input to Chat Completion format
-	const messages: ChatCompletionInputMessage[] = req.body.instructions
+	const messages: ChatCompletionMessageParam[] = req.body.instructions
 		? [{ role: "system", content: req.body.instructions }]
 		: [];
 	if (Array.isArray(req.body.input)) {
@@ -247,22 +239,19 @@ async function* innerRunStream(
 					switch (item.type) {
 						case "function_call":
 							return {
-								// hacky but best fit for now
-								role: "assistant",
-								name: `function_call ${item.name} ${item.call_id}`,
+								role: "tool" as const,
 								content: item.arguments,
+								tool_call_id: item.call_id,
 							};
 						case "function_call_output":
 							return {
-								// hacky but best fit for now
-								role: "assistant",
-								name: `function_call_output ${item.call_id}`,
+								role: "tool" as const,
 								content: item.output,
+								tool_call_id: item.call_id,
 							};
 						case "message":
-							return {
-								role: item.role,
-								content:
+							if (item.role === "assistant" || item.role === "user" || item.role === "system") {
+								const content =
 									typeof item.content === "string"
 										? item.content
 										: item.content
@@ -270,7 +259,7 @@ async function* innerRunStream(
 													switch (content.type) {
 														case "input_image":
 															return {
-																type: "image_url" as ChatCompletionInputMessageChunkType,
+																type: "image_url" as const,
 																image_url: {
 																	url: content.image_url,
 																},
@@ -278,7 +267,7 @@ async function* innerRunStream(
 														case "output_text":
 															return content.text
 																? {
-																		type: "text" as ChatCompletionInputMessageChunkType,
+																		type: "text" as const,
 																		text: content.text,
 																	}
 																: undefined;
@@ -286,72 +275,81 @@ async function* innerRunStream(
 															return undefined;
 														case "input_text":
 															return {
-																type: "text" as ChatCompletionInputMessageChunkType,
+																type: "text" as const,
 																text: content.text,
 															};
 													}
 												})
-												.filter((item) => item !== undefined),
-							};
+												.filter((item) => {
+													item !== undefined;
+												});
+
+								return {
+									role: item.role,
+									content,
+								} as ChatCompletionMessageParam;
+							}
+							return undefined;
 						case "mcp_list_tools": {
-							// Hacky: will be dropped by filter since tools are passed as separate objects
 							return {
-								role: "assistant",
-								name: "mcp_list_tools",
-								content: "",
+								role: "tool" as const,
+								content: "MCP list tools. Server: '${item.server_label}'.",
+								tool_call_id: "mcp_list_tools",
 							};
 						}
 						case "mcp_call": {
 							return {
-								role: "assistant",
-								name: "mcp_call",
+								role: "tool" as const,
 								content: `MCP call (${item.id}). Server: '${item.server_label}'. Tool: '${item.name}'. Arguments: '${item.arguments}'.`,
+								tool_call_id: "mcp_call",
 							};
 						}
 						case "mcp_approval_request": {
 							return {
-								role: "assistant",
-								name: "mcp_approval_request",
+								role: "tool" as const,
 								content: `MCP approval request (${item.id}). Server: '${item.server_label}'. Tool: '${item.name}'. Arguments: '${item.arguments}'.`,
+								tool_call_id: "mcp_approval_request",
 							};
 						}
 						case "mcp_approval_response": {
 							return {
-								role: "assistant",
-								name: "mcp_approval_response",
+								role: "tool" as const,
 								content: `MCP approval response (${item.id}). Approved: ${item.approve}. Reason: ${item.reason}.`,
+								tool_call_id: "mcp_approval_response",
 							};
 						}
 					}
 				})
-				.filter((message) => message.content?.length !== 0)
+				.filter(
+					(message): message is NonNullable<typeof message> =>
+						message !== undefined &&
+						(typeof message.content === "string" || (Array.isArray(message.content) && message.content.length !== 0))
+				)
 		);
 	} else {
-		messages.push({ role: "user", content: req.body.input });
+		messages.push({ role: "user", content: req.body.input } as const);
 	}
 
 	// Prepare payload for the LLM
-	const payload: ChatCompletionInput = {
+	const payload: ChatCompletionCreateParamsStreaming = {
 		// main params
-		model,
-		provider,
+		model: req.body.model,
 		messages,
-		stream: req.body.stream,
+		stream: true,
 		// options
 		max_tokens: req.body.max_output_tokens === null ? undefined : req.body.max_output_tokens,
 		response_format: req.body.text?.format
-			? {
-					type: req.body.text.format.type,
-					json_schema:
-						req.body.text.format.type === "json_schema"
-							? {
-									description: req.body.text.format.description,
-									name: req.body.text.format.name,
-									schema: req.body.text.format.schema,
-									strict: req.body.text.format.strict,
-								}
-							: undefined,
-				}
+			? req.body.text.format.type === "json_schema"
+				? {
+						type: "json_schema",
+						json_schema: {
+							description: req.body.text.format.description,
+							name: req.body.text.format.name,
+							schema: req.body.text.format.schema,
+							strict: req.body.text.format.strict,
+						},
+					}
+				: { type: req.body.text.format.type }
 			: undefined,
 		temperature: req.body.temperature,
 		tool_choice:
@@ -475,11 +473,15 @@ async function* listMcpToolsStream(
  */
 async function* handleOneTurnStream(
 	apiKey: string | undefined,
-	payload: ChatCompletionInput,
+	payload: ChatCompletionCreateParamsStreaming,
 	responseObject: IncompleteResponse,
 	mcpToolsMapping: Record<string, McpServerParams>
 ): AsyncGenerator<ResponseStreamEvent> {
-	const stream = new InferenceClient(apiKey).chatCompletionStream(payload);
+	const client = new OpenAI({
+		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
+		apiKey: apiKey,
+	});
+	const stream = await client.chat.completions.create(payload);
 	let previousInputTokens = responseObject.usage?.input_tokens ?? 0;
 	let previousOutputTokens = responseObject.usage?.output_tokens ?? 0;
 	let previousTotalTokens = responseObject.usage?.total_tokens ?? 0;
@@ -565,7 +567,7 @@ async function* handleOneTurnStream(
 			}
 
 			let currentOutputItem = responseObject.output.at(-1);
-			if (delta.tool_calls[0].function.name) {
+			if (delta.tool_calls[0].function?.name) {
 				const functionName = delta.tool_calls[0].function.name;
 				// Tool call with a name => new tool call
 				let newOutputObject:
@@ -594,7 +596,7 @@ async function* handleOneTurnStream(
 					newOutputObject = {
 						type: "function_call",
 						id: generateUniqueId("fc"),
-						call_id: delta.tool_calls[0].id,
+						call_id: delta.tool_calls[0].id ?? "",
 						name: functionName,
 						arguments: "",
 					};
@@ -618,7 +620,7 @@ async function* handleOneTurnStream(
 				}
 			}
 
-			if (delta.tool_calls[0].function.arguments) {
+			if (delta.tool_calls[0].function?.arguments) {
 				// Current item is necessarily a tool call
 				currentOutputItem = responseObject.output.at(-1) as
 					| ResponseOutputItem.McpCall
@@ -737,7 +739,7 @@ async function* handleOneTurnStream(
 								arguments: lastOutputItem.arguments,
 								// Hacky: type is not correct in inference.js. Will fix it but in the meantime we need to cast it.
 								// TODO: fix it in the inference.js package. Should be "arguments" and not "parameters".
-							} as unknown as ChatCompletionInputFunctionDefinition,
+							},
 						},
 					],
 				},
@@ -775,7 +777,7 @@ async function* callApprovedMCPToolStream(
 	approvalRequest: McpApprovalRequestParams | undefined,
 	mcpToolsMapping: Record<string, McpServerParams>,
 	responseObject: IncompleteResponse,
-	payload: ChatCompletionInput
+	payload: ChatCompletionCreateParamsStreaming
 ): AsyncGenerator<ResponseStreamEvent> {
 	if (!approvalRequest) {
 		throw new Error(`MCP approval request '${approval_request_id}' not found`);
@@ -842,7 +844,7 @@ async function* callApprovedMCPToolStream(
 						arguments: outputObject.arguments,
 						// Hacky: type is not correct in inference.js. Will fix it but in the meantime we need to cast it.
 						// TODO: fix it in the inference.js package. Should be "arguments" and not "parameters".
-					} as unknown as ChatCompletionInputFunctionDefinition,
+					},
 				},
 			],
 		},
