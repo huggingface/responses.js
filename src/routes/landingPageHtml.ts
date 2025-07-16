@@ -510,7 +510,7 @@ client = OpenAI(
 )
 
 response = client.responses.create(
-    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    model="moonshotai/Kimi-K2-Instruct:groq",
     instructions="You are a helpful assistant.",
     input="Tell me a three sentence bedtime story about a unicorn.",
 )
@@ -556,7 +556,7 @@ client = OpenAI(
 )
 
 response = client.responses.create(
-    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    model="moonshotai/Kimi-K2-Instruct:groq",
     input=[
         {
             "role": "developer",
@@ -582,7 +582,7 @@ client = OpenAI(
 )
 
 stream = client.responses.create(
-    model="Qwen/Qwen2.5-VL-7B-Instruct",
+    model="moonshotai/Kimi-K2-Instruct:groq",
     input=[
         {
             "role": "user",
@@ -621,7 +621,7 @@ tools = [
 ]
 
 response = client.responses.create(
-    model="meta-llama/Llama-3.3-70B-Instruct:cerebras",
+    model="moonshotai/Kimi-K2-Instruct:groq",
     tools=tools,
     input="What is the weather like in Boston today?",
     tool_choice="auto",
@@ -645,7 +645,7 @@ class CalendarEvent(BaseModel):
     participants: list[str]
 
 response = client.responses.parse(
-    model="meta-llama/Meta-Llama-3-70B-Instruct:novita",
+    model="moonshotai/Kimi-K2-Instruct:groq",
     input=[
         {"role": "system", "content": "Extract the event information."},
         {
@@ -668,7 +668,7 @@ client = OpenAI(
 )
 
 response = client.responses.create(
-    model="meta-llama/Llama-3.3-70B-Instruct:cerebras",
+    model="moonshotai/Kimi-K2-Instruct:groq",
     input="how does tiktoken work?",
     tools=[
         {
