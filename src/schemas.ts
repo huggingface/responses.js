@@ -193,7 +193,7 @@ export const createResponseParamsSchema = z.object({
 		.union([
 			z.enum(["auto", "none", "required"]),
 			z.object({
-				type: z.enum(["function"]),
+				type: z.literal("function"),
 				name: z.string(),
 			}),
 			// TODO: also hosted tool and MCP tool
@@ -206,7 +206,7 @@ export const createResponseParamsSchema = z.object({
 					name: z.string(),
 					parameters: z.record(z.any()),
 					strict: z.boolean().default(true),
-					type: z.enum(["function"]),
+					type: z.literal("function"),
 					description: z.string().optional(),
 				}),
 				mcpServerParamsSchema,
