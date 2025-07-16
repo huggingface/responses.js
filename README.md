@@ -99,7 +99,7 @@ Experience the API through our interactive web interface, adapted from the [open
 ```bash
 # Create demo/.env
 cat > demo/.env << EOF
-MODEL="cohere@CohereLabs/c4ai-command-a-03-2025"
+MODEL="CohereLabs/c4ai-command-a-03-2025"
 OPENAI_BASE_URL=http://localhost:3000/v1
 OPENAI_API_KEY=${HF_TOKEN:-<your-huggingface-token>}
 EOF
@@ -185,6 +185,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Based on OpenAI's [Responses API specification](https://platform.openai.com/docs/api-reference/responses)
-- Built on top of [OpenAI's nodejs client](https://github.com/openai/openai-node)
+- Built on top of [OpenAI's nodejs client's Types](https://github.com/openai/openai-node)
 - Demo UI adapted from [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app)
 - Built on top of [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/index)

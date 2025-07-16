@@ -94,7 +94,7 @@ describe("responses.js", function () {
 		];
 
 		const response = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			tools: tools,
 			input: "What is the weather like in Boston today?",
 			tool_choice: "auto",
@@ -114,7 +114,7 @@ describe("responses.js", function () {
 			participants: z.array(z.string()),
 		});
 		const response = await openai.responses.parse({
-			model: "novita@meta-llama/Meta-Llama-3-70B-Instruct",
+			model: "meta-llama/Meta-Llama-3-70B-Instruct:novita",
 			instructions: "Extract the event information.",
 			input: "Alice and Bob are going to a science fair on Friday.",
 			text: {
@@ -131,7 +131,7 @@ describe("responses.js", function () {
 
 	it("streaming response", async function () {
 		const stream = await openai.responses.create({
-			model: "hyperbolic@Qwen/Qwen2.5-VL-7B-Instruct",
+			model: "Qwen/Qwen2.5-VL-7B-Instruct:hyperbolic",
 			input: [
 				{
 					role: "user",
@@ -258,7 +258,7 @@ describe("responses.js", function () {
 		];
 
 		const stream = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			input: [{ role: "user", content: "What's the weather like in Paris today?" }],
 			tools,
 			stream: true,
@@ -349,7 +349,7 @@ describe("responses.js", function () {
 		});
 
 		const stream = openai.responses.stream({
-			model: "nebius@Qwen/Qwen2.5-VL-72B-Instruct",
+			model: "Qwen/Qwen2.5-VL-72B-Instruct:nebius",
 			instructions: "Extract the event information.",
 			input: "Alice and Bob are going to a science fair on Friday.",
 			text: {
@@ -464,7 +464,7 @@ describe("responses.js", function () {
 
 	it("MCP approved tool call", async function () {
 		const response = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			input: [
 				{
 					type: "message",
@@ -525,7 +525,7 @@ describe("responses.js", function () {
 
 	it("MCP approval error handling", async function () {
 		const response = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			input: [
 				{
 					type: "message",
@@ -557,7 +557,7 @@ describe("responses.js", function () {
 
 	it("MCP approval request", async function () {
 		const response = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			input: "how does tiktoken work?",
 			tools: [
 				{
@@ -610,7 +610,7 @@ describe("responses.js", function () {
 
 	it("MCP auto approval", async function () {
 		const response = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			input: "how does tiktoken work?",
 			tools: [
 				{
@@ -658,7 +658,7 @@ describe("responses.js", function () {
 
 	it("MCP tools provided in input", async function () {
 		const response = await openai.responses.create({
-			model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+			model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 			input: [
 				{
 					id: "mcp_list_tools_8713ae5fbd20f7ebb68eb32a84bbb26f17cee1e0615bb762",

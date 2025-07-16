@@ -12,7 +12,7 @@ import OpenAI from "openai";
 const openai = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: process.env.HF_TOKEN });
 
 const response = await openai.responses.create({
-	model: "cerebras@meta-llama/Llama-3.3-70B-Instruct",
+	model: "meta-llama/Llama-3.3-70B-Instruct:cerebras",
 	input: [
 		{
 			id: "mcp_list_tools_8713ae5fbd20f7ebb68eb32a84bbb26f17cee1e0615bb762",
