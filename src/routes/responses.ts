@@ -250,6 +250,7 @@ async function* innerRunStream(
 								tool_call_id: item.call_id,
 							};
 						case "message":
+						case undefined:
 							if (item.role === "assistant" || item.role === "user" || item.role === "system") {
 								const content =
 									typeof item.content === "string"
@@ -480,7 +481,6 @@ async function* handleOneTurnStream(
 		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
 		apiKey: apiKey,
 	});
-	console.log(`payload: ${JSON.stringify(payload)}`);
 	const stream = await client.chat.completions.create(payload);
 	let previousInputTokens = responseObject.usage?.input_tokens ?? 0;
 	let previousOutputTokens = responseObject.usage?.output_tokens ?? 0;

@@ -36,7 +36,7 @@ describe("responses.js", function () {
 
 	it("text+image input, text output", async function () {
 		const response = await openai.responses.create({
-			model: "meta-llama/Llama-4-Scout-17B-16E-Instruct:cerebras",
+			model: "meta-llama/Llama-4-Scout-17B-16E-Instruct:groq",
 			input: [
 				{
 					role: "user",
@@ -571,7 +571,7 @@ describe("responses.js", function () {
 		});
 
 		assert.ok(Array.isArray(response.output));
-		assert.ok(response.output.length >= 2);
+		assert.ok(response.output.length === 2);
 
 		// Check first output item (mcp_list_tools)
 		const listToolsOutput = response.output[0];
@@ -586,16 +586,8 @@ describe("responses.js", function () {
 		assert.ok(toolNames.includes("fetch_tiktoken_documentation"));
 		assert.ok(toolNames.includes("search_tiktoken_documentation"));
 
-		const mcpCallOutput = response.output[1];
-		assert.equal(mcpCallOutput.type, "mcp_call");
-		assert.equal(mcpCallOutput.name, "fetch_tiktoken_documentation");
-		assert.equal(mcpCallOutput.server_label, "gitmcp");
-		assert.ok(mcpCallOutput.id);
-		assert.ok(mcpCallOutput.arguments);
-		assert.equal(typeof mcpCallOutput.arguments, "string");
-
 		// Check second output item (mcp_approval_request)
-		const approvalRequestOutput = response.output[2];
+		const approvalRequestOutput = response.output[1];
 		assert.equal(approvalRequestOutput.type, "mcp_approval_request");
 		assert.equal(approvalRequestOutput.name, "fetch_tiktoken_documentation");
 		assert.equal(approvalRequestOutput.server_label, "gitmcp");
@@ -710,18 +702,10 @@ describe("responses.js", function () {
 		});
 
 		assert.ok(Array.isArray(response.output));
-		assert.ok(response.output.length >= 1);
-
-		const mcpCallOutput = response.output[0];
-		assert.equal(mcpCallOutput.type, "mcp_call");
-		assert.equal(mcpCallOutput.name, "fetch_tiktoken_documentation");
-		assert.equal(mcpCallOutput.server_label, "gitmcp");
-		assert.ok(mcpCallOutput.id);
-		assert.ok(mcpCallOutput.arguments);
-		assert.equal(typeof mcpCallOutput.arguments, "string");
+		assert.ok(response.output.length === 1);
 
 		// Check that the first output item is an approval request (not a list_tools call)
-		const approvalRequestOutput = response.output[1];
+		const approvalRequestOutput = response.output[0];
 		assert.equal(approvalRequestOutput.type, "mcp_approval_request");
 		assert.equal(approvalRequestOutput.name, "fetch_tiktoken_documentation");
 		assert.equal(approvalRequestOutput.server_label, "gitmcp");
