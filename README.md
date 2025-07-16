@@ -2,6 +2,10 @@
 
 A lightweight Express.js server that implements a translation layer between the two main LLM APIs currently available. Works with any Chat Completion API, whether it's a local LLM or the cloud provider of your choice.
 
+## 🎮 Live Demo
+
+[**Try responses.js right now, no installation needed!**](https://huggingface.co/spaces/Wauplin/responses.js)
+
 ## ✨ Features
 
 - **ResponsesAPI**: Partial implementation of [OpenAI's Responses API](https://platform.openai.com/docs/api-reference/responses), on top of Chat Completion API
@@ -10,9 +14,10 @@ A lightweight Express.js server that implements a translation layer between the 
 - **Structured Output**: Support for structured data responses (e.g. jsonschema)
 - **Function Calling**: Tool and function calling capabilities
 - **Multi-modal Input**: Text and image input support
+- **Remote MCP**: Execute MCP tool calls remotely
 - **Demo UI**: Interactive web interface for testing
 
-Not implemented: remote function calling, MCP server, file upload, stateful API, etc.
+Not implemented: remote function calling, file upload, stateful API, etc.
 
 ## 🚀 Quick Start
 
