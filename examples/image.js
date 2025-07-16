@@ -3,7 +3,7 @@ import OpenAI from "openai";
 const openai = new OpenAI({ baseURL: "http://localhost:3000/v1", apiKey: process.env.HF_TOKEN });
 
 const response = await openai.responses.create({
-	model: "Qwen/Qwen2.5-VL-7B-Instruct",
+	model: "meta-llama/Llama-4-Scout-17B-16E-Instruct:groq",
 	input: [
 		{
 			role: "user",

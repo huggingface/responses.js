@@ -1,18 +1,23 @@
 # responses.js
 
-A lightweight Express.js server that implements OpenAI's Responses API, built on top of Chat Completions and powered by Hugging Face Inference Providers.
+A lightweight Express.js server that implements a translation layer between the two main LLM APIs currently available. Works with any Chat Completion API, whether it's a local LLM or the cloud provider of your choice.
+
+## 🎮 Live Demo
+
+[**Try responses.js right now, no installation needed!**](https://huggingface.co/spaces/Wauplin/responses.js)
 
 ## ✨ Features
 
 - **ResponsesAPI**: Partial implementation of [OpenAI's Responses API](https://platform.openai.com/docs/api-reference/responses), on top of Chat Completion API
-- **Inference Providers**: Powered by Hugging Face Inference Providers
+- **Provider Agnostic**: Works with any Chat Completion API (local or remote)
 - **Streaming Support**: Support for streamed responses
 - **Structured Output**: Support for structured data responses (e.g. jsonschema)
 - **Function Calling**: Tool and function calling capabilities
 - **Multi-modal Input**: Text and image input support
+- **Remote MCP**: Execute MCP tool calls remotely
 - **Demo UI**: Interactive web interface for testing
 
-Not implemented: remote function calling, MCP server, file upload, stateful API, etc.
+Not implemented: remote function calling, file upload, stateful API, etc.
 
 ## 🚀 Quick Start
 
@@ -69,8 +74,8 @@ pnpm run example function_streaming
 ### Important Notes
 
 - Server must be running (`pnpm dev`) on `http://localhost:3000`
-- `HF_TOKEN` environment variable set with your Hugging Face token
-- Tests use real inference providers and will incur costs
+- `API_KEY` environment variable set with your LLM provider's API key
+- Tests use real inference providers and may incur costs
 - Tests are not run in CI due to billing requirements
 
 ### Running Tests
@@ -99,7 +104,7 @@ Experience the API through our interactive web interface, adapted from the [open
 ```bash
 # Create demo/.env
 cat > demo/.env << EOF
-MODEL="CohereLabs/c4ai-command-a-03-2025"
+MODEL="moonshotai/Kimi-K2-Instruct:groq"
 OPENAI_BASE_URL=http://localhost:3000/v1
 OPENAI_API_KEY=${HF_TOKEN:-<your-huggingface-token>}
 EOF
@@ -168,7 +173,7 @@ responses.js/
 - [x] Multi-turn conversation fixes for text messages + tool calls
 - [x] Correctly return "usage" field
 - [x] MCP support (non-streaming)
-- [ ] MCP support (streaming)
+- [x] MCP support (streaming)
 - [ ] Tools execution (web search, file search, image generation, code interpreter)
 - [ ] Background mode support
 - [ ] Additional API routes (GET, DELETE, CANCEL, LIST responses)
@@ -185,6 +190,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Based on OpenAI's [Responses API specification](https://platform.openai.com/docs/api-reference/responses)
-- Built on top of [OpenAI's nodejs client's Types](https://github.com/openai/openai-node)
+- Built on top of [OpenAI's nodejs client](https://github.com/openai/openai-node)
 - Demo UI adapted from [openai-responses-starter-app](https://github.com/openai/openai-responses-starter-app)
-- Built on top of [Hugging Face Inference Providers](https://huggingface.co/docs/inference-providers/index)
