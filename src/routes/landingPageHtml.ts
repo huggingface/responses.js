@@ -464,7 +464,10 @@ export function getLandingPageHtml(req: Request, res: Response): void {
   <main>
     <section class="hero">
       <h2>OpenAI-compatible Responses API</h2>
-      <p><b>responses.js</b> is an open-source, lightweight translation layer between the two main LLM APIs currently available. Works with any Chat Completion API, whether it's a local LLM or the cloud provider of your choice.</p>
+      <p style="text-wrap: balance;">
+        <b>responses.js</b> is an open-source lightweight translation layer between the two main LLM APIs currently available, Responses API &lt;&gt; Chat Completions. <br>
+        Works with any Chat Completion API, local or remotely hosted.
+      </p>
       <div class="api-endpoint-box">
         <button class="copy-endpoint-btn" onclick="copyEndpointUrl(this)">Copy</button>
         <div><b>API Endpoint:</b></div>

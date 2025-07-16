@@ -1,6 +1,6 @@
 # responses.js
 
-A lightweight Express.js server that implements a translation layer between the two main LLM APIs currently available. Works with any Chat Completion API, whether it's a local LLM or the cloud provider of your choice.
+A lightweight Express.js server that implements a translation layer between the two main LLM APIs currently available, Responses API and Chat Completions. Works with any Chat Completion API, local or remotely hosted.
 
 ## 🎮 Live Demo
 
