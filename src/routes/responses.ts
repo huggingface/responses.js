@@ -281,9 +281,8 @@ async function* innerRunStream(
 													}
 												})
 												.filter((item) => {
-													item !== undefined;
+													return item !== undefined;
 												});
-
 								return {
 									role: item.role,
 									content,
@@ -481,6 +480,7 @@ async function* handleOneTurnStream(
 		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
 		apiKey: apiKey,
 	});
+	console.log(`payload: ${JSON.stringify(payload)}`);
 	const stream = await client.chat.completions.create(payload);
 	let previousInputTokens = responseObject.usage?.input_tokens ?? 0;
 	let previousOutputTokens = responseObject.usage?.output_tokens ?? 0;

@@ -36,7 +36,7 @@ describe("responses.js", function () {
 
 	it("text+image input, text output", async function () {
 		const response = await openai.responses.create({
-			model: "Qwen/Qwen2.5-VL-7B-Instruct",
+			model: "meta-llama/Llama-4-Scout-17B-16E-Instruct:cerebras",
 			input: [
 				{
 					role: "user",
