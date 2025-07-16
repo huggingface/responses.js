@@ -464,7 +464,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
   <main>
     <section class="hero">
       <h2>OpenAI-compatible Responses API</h2>
-      <p><b>responses.js</b> is an open-source, lightweight server implementing OpenAI's Responses API, built on top of Chat Completions and powered by Hugging Face Inference Providers.</p>
+      <p><b>responses.js</b> is an open-source, lightweight translation layer between the two main LLM APIs currently available. Works with any Chat Completion API, whether it's a local LLM or the cloud provider of your choice.</p>
       <div class="api-endpoint-box">
         <button class="copy-endpoint-btn" onclick="copyEndpointUrl(this)">Copy</button>
         <div><b>API Endpoint:</b></div>
@@ -479,13 +479,13 @@ export function getLandingPageHtml(req: Request, res: Response): void {
           <b>OpenAI-compatible</b><br>Stateless implementation of the <a href="https://platform.openai.com/docs/api-reference/responses" target="_blank">Responses API</a>
         </div>
         <div class="feature-card">
-          <b>Inference Providers</b><br>Powered by Hugging Face Inference Providers
+          <b>Provider Agnostic</b><br>Works with any Chat Completion API (local or remote).
         </div>
         <div class="feature-card">
-          <b>Multi-modal</b><br>Text and image input support
+          <b>Multi-modal, streaming, structured output</b><br>Supports text and image inputs, streaming output, JSON schema, and function calling.
         </div>
         <div class="feature-card">
-          <b>Streaming, & Structured Output</b><br>Supports streaming, JSON schema, and function calling
+          <b>Remote MCP</b><br>Server-side MCP tool execution.
         </div>
       </div>
     </section>
