@@ -502,6 +502,7 @@ export function getLandingPageHtml(req: Request, res: Response): void {
         <button class="examples-tab" type="button">Function Calling</button>
         <button class="examples-tab" type="button">Structured Output</button>
         <button class="examples-tab" type="button">MCP</button>
+        <button class="examples-tab" type="button">Reasoning</button>
       </div>
       <div class="example-panel active">
         <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
@@ -686,6 +687,27 @@ response = client.responses.create(
 
 for output in response.output:
     print(output)</code></pre>
+      </div>
+      <div class="example-panel">
+        <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><code class="language-python">from openai import OpenAI
+import os
+
+client = OpenAI(
+    base_url="${baseUrl}",
+    api_key=os.getenv("HF_TOKEN"), # visit https://huggingface.co/settings/tokens
+)
+
+response = client.responses.create(
+    model="deepseek-ai/DeepSeek-R1",
+    instructions="You are a helpful assistant.",
+    input="Say hello to the world.",
+    reasoning={
+        "effort": "low",
+    }
+)
+
+for index, item in enumerate(response.output):
+    print(f"Output #{index}: {item.type}", item.content)</code></pre>
       </div>
     </section>
     <footer class="more-info-footer">
