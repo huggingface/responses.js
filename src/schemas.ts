@@ -160,10 +160,12 @@ export const createResponseParamsSchema = z.object({
 	model: z.string(),
 	// parallel_tool_calls: z.boolean().default(true), // TODO: how to handle this if chat completion doesn't?
 	// previous_response_id: z.string().nullable().default(null),
-	reasoning: z.object({
-		effort: z.enum(["low", "medium", "high"]).default("medium"),
-		summary: z.enum(["auto", "concise", "detailed"]).nullable().default(null),
-	}).optional(),
+	reasoning: z
+		.object({
+			effort: z.enum(["low", "medium", "high"]).default("medium"),
+			summary: z.enum(["auto", "concise", "detailed"]).nullable().default(null),
+		})
+		.optional(),
 	// store: z.boolean().default(true),
 	stream: z.boolean().default(false),
 	temperature: z.number().min(0).max(2).default(1),
