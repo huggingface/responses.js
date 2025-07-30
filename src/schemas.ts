@@ -163,7 +163,7 @@ export const createResponseParamsSchema = z.object({
 	reasoning: z.object({
 		effort: z.enum(["low", "medium", "high"]).default("medium"),
 		summary: z.enum(["auto", "concise", "detailed"]).nullable().default(null),
-	}),
+	}).optional(),
 	// store: z.boolean().default(true),
 	stream: z.boolean().default(false),
 	temperature: z.number().min(0).max(2).default(1),
