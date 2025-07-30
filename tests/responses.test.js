@@ -717,4 +717,69 @@ describe("responses.js", function () {
 		const argumentsJson = JSON.parse(approvalRequestOutput.arguments);
 		assert.ok(argumentsJson.root);
 	});
+
+	it("reasoning with streaming", async function () {
+		const stream = await openai.responses.create({
+			model: "deepseek-ai/DeepSeek-R1",
+			instructions: "You are a helpful assistant.",
+			input: "Say hello to the world.",
+			reasoning: {
+				effort: "low",
+			},
+			stream: true,
+		});
+
+		const events = [];
+		let sequenceNumber = 0;
+
+		for await (const event of stream) {
+			// Check sequence number is ascending starting from 0
+			assert.equal(event.sequence_number, sequenceNumber);
+			sequenceNumber++;
+
+			events.push(event);
+		}
+
+		const filteredEvents = dropConsecutiveEvents(events);
+
+		assert.deepEqual(
+			filteredEvents.map((e) => e.type),
+			[
+				// Starting
+				"response.created",
+				"response.in_progress",
+				// Reasoning item
+				"response.output_item.added",
+				"response.content_part.added",
+				"response.reasoning_text.delta",
+				"response.reasoning_text.done",
+				"response.content_part.done",
+				"response.output_item.done",
+				// Text item
+				"response.output_item.added",
+				"response.content_part.added",
+				"response.output_text.delta",
+				"response.output_text.done",
+				"response.content_part.done",
+				"response.output_item.done",
+				// Completed
+				"response.completed",
+			]
+		);
+
+		const responseEvent = events[events.length - 1];
+		assert.equal(responseEvent.type, "response.completed");
+
+		const output = responseEvent.response.output;
+		assert.equal(output[0].type, "reasoning");
+		assert.equal(output[0].content[0].type, "reasoning_text");
+		assert.equal(typeof output[0].content[0].text, "string");
+		assert.equal(output[1].type, "message");
+		assert.equal(output[1].content[0].type, "output_text");
+		assert.equal(typeof output[1].content[0].text, "string");
+	});
 });
+
+function dropConsecutiveEvents(events) {
+	return events.filter((event, index) => index === 0 || event.type !== events[index - 1].type);
+}

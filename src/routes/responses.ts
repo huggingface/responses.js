@@ -5,19 +5,26 @@ import { generateUniqueId } from "../lib/generateUniqueId.js";
 import { OpenAI } from "openai";
 import type {
 	Response,
-	ResponseStreamEvent,
 	ResponseContentPartAddedEvent,
 	ResponseOutputMessage,
 	ResponseFunctionToolCall,
 	ResponseOutputItem,
 } from "openai/resources/responses/responses";
 import type {
+	PatchedResponseContentPart,
+	PatchedResponseReasoningItem,
+	PatchedResponseStreamEvent,
+	ReasoningTextContent,
+} from "../openai_patch";
+import type {
 	ChatCompletionCreateParamsStreaming,
 	ChatCompletionMessageParam,
 	ChatCompletionTool,
+	ChatCompletionChunk,
 } from "openai/resources/chat/completions.js";
 import type { FunctionParameters } from "openai/resources/shared.js";
 import { callMcpTool, connectMcpServer } from "../mcp.js";
+import type { Stream } from "openai/core/streaming.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -28,6 +35,10 @@ class StreamingError extends Error {
 
 type IncompleteResponse = Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls">;
 const SEQUENCE_NUMBER_PLACEHOLDER = -1;
+
+// TODO: this depends on the model. To be adapted.
+const REASONING_START_TOKEN = "<think>";
+const REASONING_END_TOKEN = "</think>";
 
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
@@ -66,7 +77,7 @@ export const postCreateResponse = async (
 async function* runCreateResponseStream(
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
-): AsyncGenerator<ResponseStreamEvent> {
+): AsyncGenerator<PatchedResponseStreamEvent> {
 	let sequenceNumber = 0;
 	// Prepare response object that will be iteratively populated
 	const responseObject: IncompleteResponse = {
@@ -147,7 +158,7 @@ async function* innerRunStream(
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse,
 	responseObject: IncompleteResponse
-): AsyncGenerator<ResponseStreamEvent> {
+): AsyncGenerator<PatchedResponseStreamEvent> {
 	// Retrieve API key from headers
 	const apiKey = req.headers.authorization?.split(" ")[1];
 	if (!apiKey) {
@@ -156,6 +167,11 @@ async function* innerRunStream(
 			error: "Unauthorized",
 		});
 		return;
+	}
+
+	// Return early if not supported param
+	if (req.body.reasoning?.summary && req.body.reasoning?.summary !== "auto") {
+		throw new Error(`Not implemented: only 'auto' summary is supported. Got '${req.body.reasoning?.summary}'`);
 	}
 
 	// List MCP tools from server (if required) + prepare tools for the LLM
@@ -351,6 +367,7 @@ async function* innerRunStream(
 					}
 				: { type: req.body.text.format.type }
 			: undefined,
+		reasoning_effort: req.body.reasoning?.effort,
 		temperature: req.body.temperature,
 		tool_choice:
 			typeof req.body.tool_choice === "string"
@@ -417,7 +434,7 @@ async function* innerRunStream(
 async function* listMcpToolsStream(
 	tool: McpServerParams,
 	responseObject: IncompleteResponse
-): AsyncGenerator<ResponseStreamEvent> {
+): AsyncGenerator<PatchedResponseStreamEvent> {
 	const outputObject: ResponseOutputItem.McpListTools = {
 		id: generateUniqueId("mcpl"),
 		type: "mcp_list_tools",
@@ -476,15 +493,16 @@ async function* handleOneTurnStream(
 	payload: ChatCompletionCreateParamsStreaming,
 	responseObject: IncompleteResponse,
 	mcpToolsMapping: Record<string, McpServerParams>
-): AsyncGenerator<ResponseStreamEvent> {
+): AsyncGenerator<PatchedResponseStreamEvent> {
 	const client = new OpenAI({
 		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
 		apiKey: apiKey,
 	});
-	const stream = await client.chat.completions.create(payload);
+	const stream = wrapChatCompletionStream(await client.chat.completions.create(payload));
 	let previousInputTokens = responseObject.usage?.input_tokens ?? 0;
 	let previousOutputTokens = responseObject.usage?.output_tokens ?? 0;
 	let previousTotalTokens = responseObject.usage?.total_tokens ?? 0;
+	let currentTextMode: "text" | "reasoning" = "text";
 
 	for await (const chunk of stream) {
 		if (chunk.usage) {
@@ -502,65 +520,132 @@ async function* handleOneTurnStream(
 
 		if (delta.content) {
 			let currentOutputItem = responseObject.output.at(-1);
+			let deltaText = delta.content;
+
+			// If start or end of reasoning, skip token and update the current text mode
+			if (deltaText === REASONING_START_TOKEN) {
+				currentTextMode = "reasoning";
+				continue;
+			} else if (deltaText === REASONING_END_TOKEN) {
+				currentTextMode = "text";
+				for await (const event of closeLastOutputItem(responseObject, payload, mcpToolsMapping)) {
+					yield event;
+				}
+				continue;
+			}
 
 			// If start of a new message, create it
-			if (currentOutputItem?.type !== "message" || currentOutputItem?.status !== "in_progress") {
-				const outputObject: ResponseOutputMessage = {
-					id: generateUniqueId("msg"),
-					type: "message",
-					role: "assistant",
-					status: "in_progress",
-					content: [],
-				};
-				responseObject.output.push(outputObject);
+			if (currentTextMode === "text") {
+				if (currentOutputItem?.type !== "message" || currentOutputItem?.status !== "in_progress") {
+					const outputObject: ResponseOutputMessage = {
+						id: generateUniqueId("msg"),
+						type: "message",
+						role: "assistant",
+						status: "in_progress",
+						content: [],
+					};
+					responseObject.output.push(outputObject);
 
-				// Response output item added event
-				yield {
-					type: "response.output_item.added",
-					output_index: 0,
-					item: outputObject,
-					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-				};
+					// Response output item added event
+					yield {
+						type: "response.output_item.added",
+						output_index: 0,
+						item: outputObject,
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+					};
+				}
+			} else if (currentTextMode === "reasoning") {
+				if (currentOutputItem?.type !== "reasoning" || currentOutputItem?.status !== "in_progress") {
+					const outputObject: PatchedResponseReasoningItem = {
+						id: generateUniqueId("rs"),
+						type: "reasoning",
+						status: "in_progress",
+						content: [],
+						summary: [],
+					};
+					responseObject.output.push(outputObject);
+
+					// Response output item added event
+					yield {
+						type: "response.output_item.added",
+						output_index: 0,
+						item: outputObject,
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+					};
+				}
 			}
 
 			// If start of a new content part, create it
-			currentOutputItem = responseObject.output.at(-1) as ResponseOutputMessage;
-			if (currentOutputItem.content.length === 0) {
-				// Response content part added event
-				const contentPart: ResponseContentPartAddedEvent["part"] = {
-					type: "output_text",
-					text: "",
-					annotations: [],
-				};
-				currentOutputItem.content.push(contentPart);
+			if (currentTextMode === "text") {
+				const currentOutputMessage = responseObject.output.at(-1) as ResponseOutputMessage;
+				if (currentOutputMessage.content.length === 0) {
+					// Response content part added event
+					const contentPart: ResponseContentPartAddedEvent["part"] = {
+						type: "output_text",
+						text: "",
+						annotations: [],
+					};
+					currentOutputMessage.content.push(contentPart);
 
+					yield {
+						type: "response.content_part.added",
+						item_id: currentOutputMessage.id,
+						output_index: responseObject.output.length - 1,
+						content_index: currentOutputMessage.content.length - 1,
+						part: contentPart,
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+					};
+				}
+
+				const contentPart = currentOutputMessage.content.at(-1);
+				if (!contentPart || contentPart.type !== "output_text") {
+					throw new StreamingError(
+						`Not implemented: only output_text is supported in response.output[].content[].type. Got ${contentPart?.type}`
+					);
+				}
+
+				// Add text delta
+				contentPart.text += delta.content;
 				yield {
-					type: "response.content_part.added",
-					item_id: currentOutputItem.id,
+					type: "response.output_text.delta",
+					item_id: currentOutputMessage.id,
 					output_index: responseObject.output.length - 1,
-					content_index: currentOutputItem.content.length - 1,
-					part: contentPart,
+					content_index: currentOutputMessage.content.length - 1,
+					delta: delta.content,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+			} else if (currentTextMode === "reasoning") {
+				const currentReasoningItem = responseObject.output.at(-1) as PatchedResponseReasoningItem;
+				if (currentReasoningItem.content.length === 0) {
+					// Response content part added event
+					const contentPart: ReasoningTextContent = {
+						type: "reasoning_text",
+						text: "",
+					};
+					currentReasoningItem.content.push(contentPart);
+
+					yield {
+						type: "response.content_part.added",
+						item_id: currentReasoningItem.id,
+						output_index: responseObject.output.length - 1,
+						content_index: currentReasoningItem.content.length - 1,
+						part: contentPart as unknown as PatchedResponseContentPart, // TODO: adapt once openai-node is updated
+						sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+					};
+				}
+
+				// Add text delta
+				const contentPart = currentReasoningItem.content.at(-1) as ReasoningTextContent;
+				contentPart.text += delta.content;
+				yield {
+					type: "response.reasoning_text.delta",
+					item_id: currentReasoningItem.id,
+					output_index: responseObject.output.length - 1,
+					content_index: currentReasoningItem.content.length - 1,
+					delta: delta.content,
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			}
-
-			const contentPart = currentOutputItem.content.at(-1);
-			if (!contentPart || contentPart.type !== "output_text") {
-				throw new StreamingError(
-					`Not implemented: only output_text is supported in response.output[].content[].type. Got ${contentPart?.type}`
-				);
-			}
-
-			// Add text delta
-			contentPart.text += delta.content;
-			yield {
-				type: "response.output_text.delta",
-				item_id: currentOutputItem.id,
-				output_index: responseObject.output.length - 1,
-				content_index: currentOutputItem.content.length - 1,
-				delta: delta.content,
-				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-			};
 		} else if (delta.tool_calls && delta.tool_calls.length > 0) {
 			if (delta.tool_calls.length > 1) {
 				console.log("Multiple tool calls are not supported. Only the first one will be processed.");
@@ -643,6 +728,117 @@ async function* handleOneTurnStream(
 		}
 	}
 
+	for await (const event of closeLastOutputItem(responseObject, payload, mcpToolsMapping)) {
+		yield event;
+	}
+}
+
+/*
+ * Perform an approved MCP tool call and stream the response.
+ */
+async function* callApprovedMCPToolStream(
+	approval_request_id: string,
+	mcpCallId: string,
+	approvalRequest: McpApprovalRequestParams | undefined,
+	mcpToolsMapping: Record<string, McpServerParams>,
+	responseObject: IncompleteResponse,
+	payload: ChatCompletionCreateParamsStreaming
+): AsyncGenerator<PatchedResponseStreamEvent> {
+	if (!approvalRequest) {
+		throw new Error(`MCP approval request '${approval_request_id}' not found`);
+	}
+
+	const outputObject: ResponseOutputItem.McpCall = {
+		type: "mcp_call",
+		id: mcpCallId,
+		name: approvalRequest.name,
+		server_label: approvalRequest.server_label,
+		arguments: approvalRequest.arguments,
+	};
+	responseObject.output.push(outputObject);
+
+	// Response output item added event
+	yield {
+		type: "response.output_item.added",
+		output_index: responseObject.output.length - 1,
+		item: outputObject,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+
+	yield {
+		type: "response.mcp_call.in_progress",
+		item_id: outputObject.id,
+		output_index: responseObject.output.length - 1,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+
+	const toolParams = mcpToolsMapping[approvalRequest.name];
+	const toolResult = await callMcpTool(toolParams, approvalRequest.name, approvalRequest.arguments);
+
+	if (toolResult.error) {
+		outputObject.error = toolResult.error;
+		yield {
+			type: "response.mcp_call.failed",
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		};
+	} else {
+		outputObject.output = toolResult.output;
+		yield {
+			type: "response.mcp_call.completed",
+			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+		};
+	}
+
+	yield {
+		type: "response.output_item.done",
+		output_index: responseObject.output.length - 1,
+		item: outputObject,
+		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+	};
+
+	// Updating the payload for next LLM call
+	payload.messages.push(
+		{
+			role: "assistant",
+			tool_calls: [
+				{
+					id: outputObject.id,
+					type: "function",
+					function: {
+						name: outputObject.name,
+						arguments: outputObject.arguments,
+						// Hacky: type is not correct in inference.js. Will fix it but in the meantime we need to cast it.
+						// TODO: fix it in the inference.js package. Should be "arguments" and not "parameters".
+					},
+				},
+			],
+		},
+		{
+			role: "tool",
+			tool_call_id: outputObject.id,
+			content: outputObject.output ? outputObject.output : outputObject.error ? `Error: ${outputObject.error}` : "",
+		}
+	);
+}
+
+function requiresApproval(toolName: string, mcpToolsMapping: Record<string, McpServerParams>): boolean {
+	const toolParams = mcpToolsMapping[toolName];
+	return toolParams.require_approval === "always"
+		? true
+		: toolParams.require_approval === "never"
+			? false
+			: toolParams.require_approval.always?.tool_names?.includes(toolName)
+				? true
+				: toolParams.require_approval.never?.tool_names?.includes(toolName)
+					? false
+					: true; // behavior is undefined in specs, let's default to true
+}
+
+async function* closeLastOutputItem(
+	responseObject: IncompleteResponse,
+	payload: ChatCompletionCreateParamsStreaming,
+	mcpToolsMapping: Record<string, McpServerParams>
+): AsyncGenerator<PatchedResponseStreamEvent> {
 	const lastOutputItem = responseObject.output.at(-1);
 	if (lastOutputItem) {
 		if (lastOutputItem?.type === "message") {
@@ -669,6 +865,35 @@ async function* handleOneTurnStream(
 				throw new StreamingError("Not implemented: only output_text is supported in streaming mode.");
 			}
 
+			// Response output item done event
+			lastOutputItem.status = "completed";
+			yield {
+				type: "response.output_item.done",
+				output_index: responseObject.output.length - 1,
+				item: lastOutputItem,
+				sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+			};
+		} else if (lastOutputItem?.type === "reasoning") {
+			const contentPart = (lastOutputItem as PatchedResponseReasoningItem).content.at(-1);
+			if (contentPart !== undefined) {
+				yield {
+					type: "response.reasoning_text.done",
+					item_id: lastOutputItem.id,
+					output_index: responseObject.output.length - 1,
+					content_index: (lastOutputItem as PatchedResponseReasoningItem).content.length - 1,
+					text: contentPart.text,
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+
+				yield {
+					type: "response.content_part.done",
+					item_id: lastOutputItem.id,
+					output_index: responseObject.output.length - 1,
+					content_index: (lastOutputItem as PatchedResponseReasoningItem).content.length - 1,
+					part: contentPart as unknown as PatchedResponseContentPart, // TODO: adapt once openai-node is updated
+					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
+				};
+			}
 			// Response output item done event
 			lastOutputItem.status = "completed";
 			yield {
@@ -769,102 +994,57 @@ async function* handleOneTurnStream(
 }
 
 /*
- * Perform an approved MCP tool call and stream the response.
+ * Wrap a chat completion stream to handle reasoning.
+ *
+ * The reasoning start and end tokens might be sent in a longer text chunk.
+ * We want to split that text chunk so that the reasoning token is isolated in a separate chunk.
+ *
+ * TODO: also adapt for when reasoning token is sent in separate chunks.
  */
-async function* callApprovedMCPToolStream(
-	approval_request_id: string,
-	mcpCallId: string,
-	approvalRequest: McpApprovalRequestParams | undefined,
-	mcpToolsMapping: Record<string, McpServerParams>,
-	responseObject: IncompleteResponse,
-	payload: ChatCompletionCreateParamsStreaming
-): AsyncGenerator<ResponseStreamEvent> {
-	if (!approvalRequest) {
-		throw new Error(`MCP approval request '${approval_request_id}' not found`);
-	}
-
-	const outputObject: ResponseOutputItem.McpCall = {
-		type: "mcp_call",
-		id: mcpCallId,
-		name: approvalRequest.name,
-		server_label: approvalRequest.server_label,
-		arguments: approvalRequest.arguments,
-	};
-	responseObject.output.push(outputObject);
-
-	// Response output item added event
-	yield {
-		type: "response.output_item.added",
-		output_index: responseObject.output.length - 1,
-		item: outputObject,
-		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-	};
-
-	yield {
-		type: "response.mcp_call.in_progress",
-		item_id: outputObject.id,
-		output_index: responseObject.output.length - 1,
-		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-	};
-
-	const toolParams = mcpToolsMapping[approvalRequest.name];
-	const toolResult = await callMcpTool(toolParams, approvalRequest.name, approvalRequest.arguments);
-
-	if (toolResult.error) {
-		outputObject.error = toolResult.error;
-		yield {
-			type: "response.mcp_call.failed",
-			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-		};
-	} else {
-		outputObject.output = toolResult.output;
-		yield {
-			type: "response.mcp_call.completed",
-			sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-		};
-	}
-
-	yield {
-		type: "response.output_item.done",
-		output_index: responseObject.output.length - 1,
-		item: outputObject,
-		sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
-	};
-
-	// Updating the payload for next LLM call
-	payload.messages.push(
-		{
-			role: "assistant",
-			tool_calls: [
+async function* wrapChatCompletionStream(
+	stream: Stream<ChatCompletionChunk & { _request_id?: string | null | undefined }>
+): AsyncGenerator<ChatCompletionChunk & { _request_id?: string | null | undefined }> {
+	function cloneChunkWithContent(baseChunk: ChatCompletionChunk, content: string): ChatCompletionChunk {
+		return {
+			...baseChunk,
+			choices: [
 				{
-					id: outputObject.id,
-					type: "function",
-					function: {
-						name: outputObject.name,
-						arguments: outputObject.arguments,
-						// Hacky: type is not correct in inference.js. Will fix it but in the meantime we need to cast it.
-						// TODO: fix it in the inference.js package. Should be "arguments" and not "parameters".
+					...baseChunk.choices[0],
+					delta: {
+						...baseChunk.choices[0].delta,
+						content,
 					},
 				},
 			],
-		},
-		{
-			role: "tool",
-			tool_call_id: outputObject.id,
-			content: outputObject.output ? outputObject.output : outputObject.error ? `Error: ${outputObject.error}` : "",
-		}
-	);
-}
+		};
+	}
 
-function requiresApproval(toolName: string, mcpToolsMapping: Record<string, McpServerParams>): boolean {
-	const toolParams = mcpToolsMapping[toolName];
-	return toolParams.require_approval === "always"
-		? true
-		: toolParams.require_approval === "never"
-			? false
-			: toolParams.require_approval.always?.tool_names?.includes(toolName)
-				? true
-				: toolParams.require_approval.never?.tool_names?.includes(toolName)
-					? false
-					: true; // behavior is undefined in specs, let's default to true
+	function* splitAndYieldChunk(chunk: ChatCompletionChunk, content: string, token: string) {
+		const [beforeContent, afterContent] = content.split(token, 2);
+
+		if (beforeContent) {
+			yield cloneChunkWithContent(chunk, beforeContent);
+		}
+		yield cloneChunkWithContent(chunk, token);
+		if (afterContent) {
+			yield cloneChunkWithContent(chunk, afterContent);
+		}
+	}
+
+	for await (const chunk of stream) {
+		const content = chunk.choices[0].delta.content;
+
+		if (!content) {
+			yield chunk;
+			continue;
+		}
+
+		if (content.includes(REASONING_START_TOKEN)) {
+			yield* splitAndYieldChunk(chunk, content, REASONING_START_TOKEN);
+		} else if (content.includes(REASONING_END_TOKEN)) {
+			yield* splitAndYieldChunk(chunk, content, REASONING_END_TOKEN);
+		} else {
+			yield chunk;
+		}
+	}
 }
