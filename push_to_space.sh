@@ -21,7 +21,7 @@ cp README.md README.bak
 echo "$HEADER$(cat README.bak)" > README.md
 
 # 2. Run the huggingface upload command
-huggingface-cli upload responses.js . --include "package.json" "pnpm-lock.yaml" "tsconfig.json" "README.md" "Dockerfile" "src/**" --repo-type "space"
+hf upload responses.js . --include "package.json" "pnpm-lock.yaml" "tsconfig.json" "README.md" "Dockerfile" "src/**" --repo-type "space"
 
 # 3. Restore original README.md
 mv README.bak README.md
