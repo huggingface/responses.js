@@ -14,6 +14,10 @@ export const createApp = (): Express => {
 	// Routes
 	app.get("/", getLandingPageHtml);
 
+	app.get("/health", (_req: Request, res: Response) => {
+		res.send("OK");
+	});
+
 	app.post("/v1/responses", validateBody(createResponseParamsSchema), postCreateResponse);
 
 	return app;
