@@ -24,7 +24,11 @@ ingress:
     kubernetes.io/ingress.class: "alb"
 
 autoscaling:
-  enabled: false
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 30
+  targetMemoryUtilizationPercentage: "50"
+  targetCPUUtilizationPercentage: "50"
 
 resources:
   requests:
