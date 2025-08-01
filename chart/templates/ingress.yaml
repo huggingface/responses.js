@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations: {{ toYaml .Values.ingress.annotations | nindent 4 }}
+  labels: {{ include "labels.standard" . | nindent 4 }}
+  name: {{ include "name" . }}-cloudfront
+  namespace: {{ .Release.Namespace }}
+spec:
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ . }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: {{ include "name" $ }}
+                port:
+                  name: http
+            pathType: Prefix
+            path: /v1/responses
+    {{- end }}

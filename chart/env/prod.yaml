@@ -1,0 +1,36 @@
+nodeSelector:
+  role-hub-utils: "true"
+
+tolerations:
+  - key: "huggingface.co/hub-utils"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"
+
+ingress:
+  hosts:
+  - huggingface.co
+  - router.huggingface.co
+  annotations:
+    alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:707930574880:certificate/5b25b145-75db-4837-b9f3-7f238ba8a9c7"
+    alb.ingress.kubernetes.io/healthcheck-path: "/health"
+    alb.ingress.kubernetes.io/listen-ports: "[{\"HTTP\": 80}, {\"HTTPS\": 443}]"
+    alb.ingress.kubernetes.io/load-balancer-name: "hub-utils-prod-cloudfront"
+    alb.ingress.kubernetes.io/group.name: "hub-utils-prod-cloudfront"
+    alb.ingress.kubernetes.io/scheme: "internal"
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/tags: "Env=prod,Project=hub,Terraform=true"
+    alb.ingress.kubernetes.io/subnets: "subnet-083aee63a615eff75,subnet-0499676db10da9b25,subnet-068f9e811ea6ed104,subnet-0c7668e50f7be2b58,subnet-096f4641e7b891f54"
+    alb.ingress.kubernetes.io/target-type: "ip"
+    kubernetes.io/ingress.class: "alb"
+
+autoscaling:
+  enabled: false
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 1Gi
+  limits:
+    cpu: "4"
+    memory: 4Gi

@@ -110,3 +110,5 @@ dist
 docs
 
 .vscode
+
+chart/debug.yaml

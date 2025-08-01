@@ -1,0 +1,21 @@
+image:
+  repository: huggingface
+  name: response-js
+  tag: sha-1234
+  pullPolicy: Always
+
+replicas: 1
+
+service:
+  type: NodePort
+  annotations: {}
+
+ingress:
+  hosts: []
+  annotations: {}
+
+env: {}
+
+resources: {}
+nodeSelector: {}
+tolerations: []

@@ -4,4 +4,5 @@ README.md
 demo/
 node_modules/
 dist/
+chart/
 *.log
