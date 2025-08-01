@@ -9,6 +9,7 @@ import type {
 	ResponseOutputText,
 } from "openai/resources/responses/responses";
 
+import type { ChatCompletionChunk } from "openai/resources/chat/completions";
 export interface ReasoningTextContent {
 	type: "reasoning_text";
 	text: string;
@@ -42,3 +43,7 @@ export type PatchedResponseStreamEvent =
 	| PatchedResponseReasoningTextDoneEvent;
 
 export type PatchedResponseContentPart = ResponseOutputText | ResponseOutputRefusal;
+
+export type PatchedDeltaWithReasoning = ChatCompletionChunk.Choice.Delta & {
+	reasoning?: string;
+};
