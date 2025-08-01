@@ -20,7 +20,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            huggingface/response-js
+            huggingface/responses-js
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,enable=true,prefix=sha-,format=short,sha-len=8
@@ -71,4 +71,4 @@ jobs:
           display-workflow-run-url-interval: 10s
           ref: refs/heads/main
           token: ${{ secrets.GIT_TOKEN_INFRA_DEPLOYMENT }}
-          inputs: '{"path": "hub-integrations/response-js/response-js.yaml", "value": ${{ env.VALUES }}, "url": "${{ github.event.head_commit.url }}"}'
+          inputs: '{"path": "hub-integrations/responses-js/responses-js.yaml", "value": ${{ env.VALUES }}, "url": "${{ github.event.head_commit.url }}"}'

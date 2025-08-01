@@ -1,6 +1,6 @@
 image:
   repository: huggingface
-  name: response-js
+  name: responses-js
   tag: sha-1234
   pullPolicy: Always
 

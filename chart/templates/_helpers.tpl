@@ -2,14 +2,14 @@
 {{- default $.Release.Name | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "response-js.name" -}}
-response-js
+{{- define "responses-js.name" -}}
+responses-js
 {{- end -}}
 
 {{- define "labels.standard" -}}
 release: {{ $.Release.Name | quote }}
 heritage: {{ $.Release.Service | quote }}
 chart: "{{ include "name" . }}"
-app: "{{ include "response-js.name" . }}"
+app: "{{ include "responses-js.name" . }}"
 {{- end -}}
 
