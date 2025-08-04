@@ -15,16 +15,15 @@ import type {
 	PatchedResponseReasoningItem,
 	PatchedResponseStreamEvent,
 	ReasoningTextContent,
+	PatchedDeltaWithReasoning,
 } from "../openai_patch";
 import type {
 	ChatCompletionCreateParamsStreaming,
 	ChatCompletionMessageParam,
 	ChatCompletionTool,
-	ChatCompletionChunk,
 } from "openai/resources/chat/completions.js";
 import type { FunctionParameters } from "openai/resources/shared.js";
 import { callMcpTool, connectMcpServer } from "../mcp.js";
-import type { Stream } from "openai/core/streaming.js";
 
 class StreamingError extends Error {
 	constructor(message: string) {
@@ -35,10 +34,6 @@ class StreamingError extends Error {
 
 type IncompleteResponse = Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls">;
 const SEQUENCE_NUMBER_PLACEHOLDER = -1;
-
-// TODO: this depends on the model. To be adapted.
-const REASONING_START_TOKEN = "<think>";
-const REASONING_END_TOKEN = "</think>";
 
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
@@ -498,7 +493,7 @@ async function* handleOneTurnStream(
 		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
 		apiKey: apiKey,
 	});
-	const stream = wrapChatCompletionStream(await client.chat.completions.create(payload));
+	const stream = await client.chat.completions.create(payload);
 	let previousInputTokens = responseObject.usage?.input_tokens ?? 0;
 	let previousOutputTokens = responseObject.usage?.output_tokens ?? 0;
 	let previousTotalTokens = responseObject.usage?.total_tokens ?? 0;
@@ -516,22 +511,26 @@ async function* handleOneTurnStream(
 			};
 		}
 
-		const delta = chunk.choices[0].delta;
+		const delta = chunk.choices[0].delta as PatchedDeltaWithReasoning;
 
-		if (delta.content) {
+		if (delta.content || delta.reasoning) {
 			let currentOutputItem = responseObject.output.at(-1);
-			let deltaText = delta.content;
 
 			// If start or end of reasoning, skip token and update the current text mode
-			if (deltaText === REASONING_START_TOKEN) {
-				currentTextMode = "reasoning";
-				continue;
-			} else if (deltaText === REASONING_END_TOKEN) {
-				currentTextMode = "text";
-				for await (const event of closeLastOutputItem(responseObject, payload, mcpToolsMapping)) {
-					yield event;
+			if (delta.reasoning) {
+				if (currentTextMode === "text") {
+					for await (const event of closeLastOutputItem(responseObject, payload, mcpToolsMapping)) {
+						yield event;
+					}
 				}
-				continue;
+				currentTextMode = "reasoning";
+			} else if (delta.content) {
+				if (currentTextMode === "reasoning") {
+					for await (const event of closeLastOutputItem(responseObject, payload, mcpToolsMapping)) {
+						yield event;
+					}
+				}
+				currentTextMode = "text";
 			}
 
 			// If start of a new message, create it
@@ -611,7 +610,7 @@ async function* handleOneTurnStream(
 					item_id: currentOutputMessage.id,
 					output_index: responseObject.output.length - 1,
 					content_index: currentOutputMessage.content.length - 1,
-					delta: delta.content,
+					delta: delta.content as string,
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			} else if (currentTextMode === "reasoning") {
@@ -636,13 +635,13 @@ async function* handleOneTurnStream(
 
 				// Add text delta
 				const contentPart = currentReasoningItem.content.at(-1) as ReasoningTextContent;
-				contentPart.text += delta.content;
+				contentPart.text += delta.reasoning;
 				yield {
 					type: "response.reasoning_text.delta",
 					item_id: currentReasoningItem.id,
 					output_index: responseObject.output.length - 1,
 					content_index: currentReasoningItem.content.length - 1,
-					delta: delta.content,
+					delta: delta.reasoning as string,
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			}
@@ -989,62 +988,6 @@ async function* closeLastOutputItem(
 			throw new StreamingError(
 				`Not implemented: expected message, function_call, or mcp_call, got ${lastOutputItem?.type}`
 			);
-		}
-	}
-}
-
-/*
- * Wrap a chat completion stream to handle reasoning.
- *
- * The reasoning start and end tokens might be sent in a longer text chunk.
- * We want to split that text chunk so that the reasoning token is isolated in a separate chunk.
- *
- * TODO: also adapt for when reasoning token is sent in separate chunks.
- */
-async function* wrapChatCompletionStream(
-	stream: Stream<ChatCompletionChunk & { _request_id?: string | null | undefined }>
-): AsyncGenerator<ChatCompletionChunk & { _request_id?: string | null | undefined }> {
-	function cloneChunkWithContent(baseChunk: ChatCompletionChunk, content: string): ChatCompletionChunk {
-		return {
-			...baseChunk,
-			choices: [
-				{
-					...baseChunk.choices[0],
-					delta: {
-						...baseChunk.choices[0].delta,
-						content,
-					},
-				},
-			],
-		};
-	}
-
-	function* splitAndYieldChunk(chunk: ChatCompletionChunk, content: string, token: string) {
-		const [beforeContent, afterContent] = content.split(token, 2);
-
-		if (beforeContent) {
-			yield cloneChunkWithContent(chunk, beforeContent);
-		}
-		yield cloneChunkWithContent(chunk, token);
-		if (afterContent) {
-			yield cloneChunkWithContent(chunk, afterContent);
-		}
-	}
-
-	for await (const chunk of stream) {
-		const content = chunk.choices[0].delta.content;
-
-		if (!content) {
-			yield chunk;
-			continue;
-		}
-
-		if (content.includes(REASONING_START_TOKEN)) {
-			yield* splitAndYieldChunk(chunk, content, REASONING_START_TOKEN);
-		} else if (content.includes(REASONING_END_TOKEN)) {
-			yield* splitAndYieldChunk(chunk, content, REASONING_END_TOKEN);
-		} else {
-			yield chunk;
 		}
 	}
 }
