@@ -517,12 +517,13 @@ async function* handleOneTurnStream(
 		}
 
 		const delta = chunk.choices[0].delta as PatchedDeltaWithReasoning;
+		const reasoningText = delta.reasoning ?? delta.reasoning_content;
 
-		if (delta.content || delta.reasoning) {
+		if (delta.content || reasoningText) {
 			let currentOutputItem = responseObject.output.at(-1);
 
 			// If start or end of reasoning, skip token and update the current text mode
-			if (delta.reasoning) {
+			if (reasoningText) {
 				if (currentTextMode === "text") {
 					for await (const event of closeLastOutputItem(responseObject, payload, mcpToolsMapping)) {
 						yield event;
@@ -640,13 +641,13 @@ async function* handleOneTurnStream(
 
 				// Add text delta
 				const contentPart = currentReasoningItem.content.at(-1) as ReasoningTextContent;
-				contentPart.text += delta.reasoning;
+				contentPart.text += reasoningText;
 				yield {
 					type: "response.reasoning_text.delta",
 					item_id: currentReasoningItem.id,
 					output_index: responseObject.output.length - 1,
 					content_index: currentReasoningItem.content.length - 1,
-					delta: delta.reasoning as string,
+					delta: reasoningText as string,
 					sequence_number: SEQUENCE_NUMBER_PLACEHOLDER,
 				};
 			}

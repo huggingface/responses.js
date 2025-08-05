@@ -46,4 +46,5 @@ export type PatchedResponseContentPart = ResponseOutputText | ResponseOutputRefu
 
 export type PatchedDeltaWithReasoning = ChatCompletionChunk.Choice.Delta & {
 	reasoning?: string;
+	reasoning_content?: string;
 };
