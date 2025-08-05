@@ -207,7 +207,7 @@ export const createResponseParamsSchema = z.object({
 				z.object({
 					name: z.string(),
 					parameters: z.record(z.any()),
-					strict: z.boolean().default(true),
+					strict: z.boolean().optional(),
 					type: z.literal("function"),
 					description: z.string().optional(),
 				}),

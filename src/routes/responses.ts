@@ -359,7 +359,7 @@ async function* innerRunStream(
 							description: req.body.text.format.description,
 							name: req.body.text.format.name,
 							schema: req.body.text.format.schema,
-							strict: req.body.text.format.strict,
+							strict: false, // req.body.text.format.strict,
 						},
 					}
 				: { type: req.body.text.format.type }
