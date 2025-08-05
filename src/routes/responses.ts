@@ -516,6 +516,10 @@ async function* handleOneTurnStream(
 			};
 		}
 
+		if (!chunk.choices[0]) {
+			continue;
+		}
+
 		const delta = chunk.choices[0].delta as PatchedDeltaWithReasoning;
 		const reasoningText = delta.reasoning ?? delta.reasoning_content;
 
