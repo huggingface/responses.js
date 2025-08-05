@@ -125,8 +125,11 @@ async function* runCreateResponseStream(
 		console.error("Error in stream:", error);
 
 		const message =
-			typeof error === "object" && error && "message" in error && typeof (error as any).message === "string"
-				? (error as any).message
+			typeof error === "object" &&
+			error &&
+			"message" in error &&
+			typeof (error as { message: unknown }).message === "string"
+				? (error as { message: string }).message
 				: "An error occurred in stream";
 
 		responseObject.status = "failed";
@@ -359,7 +362,7 @@ async function* innerRunStream(
 							description: req.body.text.format.description,
 							name: req.body.text.format.name,
 							schema: req.body.text.format.schema,
-							strict: req.body.text.format.strict,
+							strict: false, // req.body.text.format.strict,
 						},
 					}
 				: { type: req.body.text.format.type }
