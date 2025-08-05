@@ -123,10 +123,12 @@ async function* runCreateResponseStream(
 	} catch (error) {
 		// Error event => stop
 		console.error("Error in stream:", error);
+
 		const message =
-			typeof error === "object" && error && "message" in error && typeof error.message === "string"
-				? error.message
+			typeof error === "object" && error && "message" in error && typeof (error as any).message === "string"
+				? (error as any).message
 				: "An error occurred in stream";
+
 		responseObject.status = "failed";
 		responseObject.error = {
 			code: "server_error",
