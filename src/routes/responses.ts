@@ -982,7 +982,7 @@ async function* closeLastOutputItem(
 							: "",
 				}
 			);
-		} else if (lastOutputItem?.type === "mcp_approval_request") {
+		} else if (lastOutputItem?.type === "mcp_approval_request" || lastOutputItem?.type === "mcp_list_tools") {
 			yield {
 				type: "response.output_item.done",
 				output_index: responseObject.output.length - 1,
