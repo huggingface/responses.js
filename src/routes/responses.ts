@@ -300,9 +300,10 @@ async function* innerRunStream(
 												.filter((item) => {
 													return item !== undefined;
 												});
+								const maybeFlatContent = content.length === 1 && typeof content[0] === "object" && "type" in content[0] && content[0].type === "text" ? content[0].text : content;
 								return {
 									role: item.role,
-									content,
+									content: maybeFlatContent,
 								} as ChatCompletionMessageParam;
 							}
 							return undefined;
