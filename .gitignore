@@ -112,3 +112,5 @@ docs
 .vscode
 
 chart/debug.yaml
+
+__pycache__
