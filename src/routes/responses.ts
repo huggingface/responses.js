@@ -44,6 +44,12 @@ const NOT_FORWARDED_HEADERS = [
 	"content-length",
 	"content-type",
 	"host",
+	"keep-alive",
+	"te",
+	"trailer",
+	"trailers",
+	"transfer-encoding",
+	"upgrade",
 ];
 
 export const postCreateResponse = async (
