@@ -35,6 +35,17 @@ class StreamingError extends Error {
 type IncompleteResponse = Omit<Response, "incomplete_details" | "output_text" | "parallel_tool_calls">;
 const SEQUENCE_NUMBER_PLACEHOLDER = -1;
 
+// All headers are forwarded by default, except these ones.
+const NOT_FORWARDED_HEADERS = [
+	"accept",
+	"accept-encoding",
+	"authorization",
+	"connection",
+	"content-length",
+	"content-type",
+	"host",
+];
+
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
@@ -168,6 +179,11 @@ async function* innerRunStream(
 		});
 		return;
 	}
+
+	// Forward headers (except authorization handled separately)
+	const defaultHeaders = Object.fromEntries(
+		Object.entries(req.headers).filter(([key]) => !NOT_FORWARDED_HEADERS.includes(key.toLowerCase()))
+	) as Record<string, string>;
 
 	// Return early if not supported param
 	if (req.body.reasoning?.summary && req.body.reasoning?.summary !== "auto") {
@@ -429,7 +445,7 @@ async function* innerRunStream(
 	do {
 		previousMessageCount = currentMessageCount;
 
-		for await (const event of handleOneTurnStream(apiKey, payload, responseObject, mcpToolsMapping)) {
+		for await (const event of handleOneTurnStream(apiKey, payload, responseObject, mcpToolsMapping, defaultHeaders)) {
 			yield event;
 		}
 
@@ -499,11 +515,13 @@ async function* handleOneTurnStream(
 	apiKey: string | undefined,
 	payload: ChatCompletionCreateParamsStreaming,
 	responseObject: IncompleteResponse,
-	mcpToolsMapping: Record<string, McpServerParams>
+	mcpToolsMapping: Record<string, McpServerParams>,
+	defaultHeaders: Record<string, string>
 ): AsyncGenerator<PatchedResponseStreamEvent> {
 	const client = new OpenAI({
 		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
 		apiKey: apiKey,
+		defaultHeaders,
 	});
 	const stream = await client.chat.completions.create(payload);
 	let previousInputTokens = responseObject.usage?.input_tokens ?? 0;
