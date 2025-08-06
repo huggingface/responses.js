@@ -36,7 +36,7 @@ type IncompleteResponse = Omit<Response, "incomplete_details" | "output_text" | 
 const SEQUENCE_NUMBER_PLACEHOLDER = -1;
 
 // All headers are forwarded by default, except these ones.
-const NOT_FORWARDED_HEADERS = [
+const NOT_FORWARDED_HEADERS = new Set([
 	"accept",
 	"accept-encoding",
 	"authorization",
@@ -50,7 +50,7 @@ const NOT_FORWARDED_HEADERS = [
 	"trailers",
 	"transfer-encoding",
 	"upgrade",
-];
+]);
 
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
@@ -188,7 +188,7 @@ async function* innerRunStream(
 
 	// Forward headers (except authorization handled separately)
 	const defaultHeaders = Object.fromEntries(
-		Object.entries(req.headers).filter(([key]) => !NOT_FORWARDED_HEADERS.includes(key.toLowerCase()))
+		Object.entries(req.headers).filter(([key]) => !NOT_FORWARDED_HEADERS.has(key.toLowerCase()))
 	) as Record<string, string>;
 
 	// Return early if not supported param
