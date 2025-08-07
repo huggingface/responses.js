@@ -101,8 +101,8 @@ export const createResponseParamsSchema = z.object({
 							z.object({
 								type: z.literal("output_text"),
 								text: z.string(),
-								annotations: z.array(z.object({})).nullable().optional(), // TODO: incomplete
-								logprobs: z.array(z.object({})).nullable().optional(), // TODO: incomplete
+								annotations: z.array(z.record(z.any())).nullable().optional(), // TODO: incomplete
+								logprobs: z.array(z.record(z.any())).nullable().optional(), // TODO: incomplete
 							}),
 							z.object({
 								type: z.literal("refusal"),
