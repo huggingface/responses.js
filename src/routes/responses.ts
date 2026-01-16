@@ -72,9 +72,17 @@ export const postCreateResponse = async (
 	} else {
 		console.debug("Non-stream request");
 		for await (const event of events) {
-			if (event.type === "response.completed" || event.type === "response.failed") {
+			if (event.type === "response.failed") {
 				console.debug(event.type);
-				res.json(event.response);
+				const message = event.response.error?.message;
+				const isUnauthorized = typeof message === "string" && message.startsWith("Unauthorized:");
+				res.status(isUnauthorized ? 401 : 500).json(event.response);
+				return;
+			}
+			if (event.type === "response.completed") {
+				console.debug(event.type);
+				res.status(200).json(event.response);
+				return;
 			}
 		}
 	}
