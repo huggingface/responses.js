@@ -56,6 +56,20 @@ export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
 ): Promise<void> => {
+	// For stream requests, validate authorization *before* setting SSE headers.
+	// Once headers are sent, we can't switch to a 401 response.
+	if (req.body.stream) {
+		const apiKey = req.headers.authorization?.split(" ")[1];
+		if (!apiKey) {
+			res.status(401).json({
+				error: {
+					message: "Unauthorized: Missing or invalid Authorization header",
+				},
+			});
+			return;
+		}
+	}
+
 	// To avoid duplicated code, we run all requests as stream.
 	const events = runCreateResponseStream(req, res);
 
