@@ -179,11 +179,7 @@ async function* innerRunStream(
 	// Retrieve API key from headers
 	const apiKey = req.headers.authorization?.split(" ")[1];
 	if (!apiKey) {
-		res.status(401).json({
-			success: false,
-			error: "Unauthorized",
-		});
-		return;
+		throw new Error("Unauthorized: Missing or invalid Authorization header");
 	}
 
 	// Forward headers (except authorization handled separately)
