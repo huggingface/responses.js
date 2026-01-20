@@ -52,17 +52,28 @@ const NOT_FORWARDED_HEADERS = new Set([
 	"upgrade",
 ]);
 
+function getBearerToken(authorizationHeader: unknown): string | undefined {
+	if (typeof authorizationHeader !== "string") {
+		return undefined;
+	}
+
+	// We don't validate the token - just extract it in a safe, predictable way.
+	const match = authorizationHeader.match(/^Bearer\s+(.+)$/i);
+	if (!match) {
+		return undefined;
+	}
+
+	const token = match[1].trim();
+	return token.length > 0 ? token : undefined;
+}
+
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
 ): Promise<void> => {
 	// This service doesn't validate the token, but it cannot proceed without one.
 	// Fail early before we start streaming (once we write SSE bytes, we can't return a 401).
-	const authorizationHeader = req.headers.authorization;
-	const apiKey =
-		typeof authorizationHeader === "string" && authorizationHeader.startsWith("Bearer ")
-			? authorizationHeader.slice("Bearer ".length).trim()
-			: undefined;
+		const apiKey = getBearerToken(req.headers.authorization);
 	if (!apiKey) {
 		res.status(401).json({
 			success: false,
