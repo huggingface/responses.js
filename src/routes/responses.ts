@@ -56,8 +56,23 @@ export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
 ): Promise<void> => {
+	// This service doesn't validate the token, but it cannot proceed without one.
+	// Fail early before we start streaming (once we write SSE bytes, we can't return a 401).
+	const authorizationHeader = req.headers.authorization;
+	const apiKey =
+		typeof authorizationHeader === "string" && authorizationHeader.startsWith("Bearer ")
+			? authorizationHeader.slice("Bearer ".length).trim()
+			: undefined;
+	if (!apiKey) {
+		res.status(401).json({
+			success: false,
+			error: "Unauthorized",
+		});
+		return;
+	}
+
 	// To avoid duplicated code, we run all requests as stream.
-	const events = runCreateResponseStream(req, res);
+	const events = runCreateResponseStream(req, res, apiKey);
 
 	// Then we return in the correct format depending on the user 'stream' flag.
 	if (req.body.stream) {
@@ -88,7 +103,8 @@ export const postCreateResponse = async (
  */
 async function* runCreateResponseStream(
 	req: ValidatedRequest<CreateResponseParams>,
-	res: ExpressResponse
+	res: ExpressResponse,
+	apiKey: string
 ): AsyncGenerator<PatchedResponseStreamEvent> {
 	let sequenceNumber = 0;
 	// Prepare response object that will be iteratively populated
@@ -134,7 +150,7 @@ async function* runCreateResponseStream(
 
 	// Any events (LLM call, MCP call, list tools, etc.)
 	try {
-		for await (const event of innerRunStream(req, res, responseObject)) {
+		for await (const event of innerRunStream(req, res, responseObject, apiKey)) {
 			yield { ...event, sequence_number: sequenceNumber++ };
 		}
 	} catch (error) {
@@ -174,17 +190,9 @@ async function* runCreateResponseStream(
 async function* innerRunStream(
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse,
-	responseObject: IncompleteResponse
+	responseObject: IncompleteResponse,
+	apiKey: string
 ): AsyncGenerator<PatchedResponseStreamEvent> {
-	// Retrieve API key from headers
-	const apiKey = req.headers.authorization?.split(" ")[1];
-	if (!apiKey) {
-		res.status(401).json({
-			success: false,
-			error: "Unauthorized",
-		});
-		return;
-	}
 
 	// Forward headers (except authorization handled separately)
 	const defaultHeaders = Object.fromEntries(
