@@ -66,7 +66,7 @@ export const postCreateResponse = async (
 		console.debug("Stream request");
 		for await (const event of events) {
 			console.debug(`Event #${event.sequence_number}: ${event.type}`);
-			res.write(`data: ${JSON.stringify(event)}\n\n`);
+			res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 		}
 		res.end();
 	} else {
