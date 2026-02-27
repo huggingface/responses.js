@@ -3,11 +3,12 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { version as packageVersion } from "../package.json";
 import { URL } from "url";
+import type { Logger } from "pino";
 
 import type { McpServerParams } from "./schemas";
 import { McpResultFormatter } from "./lib/McpResultFormatter";
 
-export async function connectMcpServer(mcpServer: McpServerParams): Promise<Client> {
+export async function connectMcpServer(mcpServer: McpServerParams, log: Logger): Promise<Client> {
 	const mcp = new Client({ name: "@huggingface/responses.js", version: packageVersion });
 
 	// Try to connect with http first, if that fails, try sse
@@ -27,7 +28,7 @@ export async function connectMcpServer(mcpServer: McpServerParams): Promise<Clie
 		await mcp.connect(transport);
 	}
 
-	console.log("Connected to MCP server", mcpServer.server_url);
+	log.info({ server_url: mcpServer.server_url }, "Connected to MCP server");
 
 	return mcp;
 }
@@ -35,12 +36,13 @@ export async function connectMcpServer(mcpServer: McpServerParams): Promise<Clie
 export async function callMcpTool(
 	mcpServer: McpServerParams,
 	toolName: string,
-	argumentsString: string
+	argumentsString: string,
+	log: Logger
 ): Promise<{ error: string; output?: undefined } | { error?: undefined; output: string }> {
 	try {
-		const client = await connectMcpServer(mcpServer);
+		const client = await connectMcpServer(mcpServer, log);
 		const toolArgs: Record<string, unknown> = argumentsString === "" ? {} : JSON.parse(argumentsString);
-		console.log(`Calling MCP tool '${toolName}'`);
+		log.info({ tool_name: toolName }, "Calling MCP tool");
 		const toolResponse = await client.callTool({ name: toolName, arguments: toolArgs });
 		const formattedResult = McpResultFormatter.format(toolResponse);
 		return {

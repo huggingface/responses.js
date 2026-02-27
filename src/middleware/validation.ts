@@ -18,7 +18,7 @@ export function validateBody<T extends z.ZodTypeAny>(schema: T) {
 			next();
 		} catch (error) {
 			if (error instanceof z.ZodError) {
-				console.log(req.body);
+				req.log?.warn({ validation_errors: error.errors }, "Request validation failed");
 				res.status(400).json({
 					success: false,
 					error: error.errors,

@@ -1,25 +1,23 @@
 import { createApp } from "./server.js";
+import { logger } from "./lib/logger.js";
 
 const app = createApp();
 const port = process.env.PORT || 3000;
 
 // Start server
 app.listen(port, () => {
-	console.log(`🚀 Server started at ${new Date().toISOString()}`);
-	console.log(`🌐 Server is running on http://localhost:${port}`);
-	console.log("─".repeat(60));
+	logger.info({ port }, "Server started");
+	logger.info({ url: `http://localhost:${port}` }, "Server is running");
 });
 
 // Graceful shutdown logging
 process.on("SIGINT", () => {
-	console.log("─".repeat(60));
-	console.log(`🛑 Server shutting down at ${new Date().toISOString()}`);
+	logger.info("Server shutting down (SIGINT)");
 	process.exit(0);
 });
 
 process.on("SIGTERM", () => {
-	console.log("─".repeat(60));
-	console.log(`🛑 Server shutting down at ${new Date().toISOString()}`);
+	logger.info("Server shutting down (SIGTERM)");
 	process.exit(0);
 });
 
