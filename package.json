@@ -12,6 +12,7 @@
 			"@hono/node-server": ">=1.19.13",
 			"minimatch": ">=10.2.3",
 			"@modelcontextprotocol/sdk>ajv": ">=8.18.0",
+			"fast-uri": ">=3.1.2",
 			"rollup": ">=4.59.0",
 			"serialize-javascript": ">=7.0.5",
 			"flatted": ">=3.4.2",
