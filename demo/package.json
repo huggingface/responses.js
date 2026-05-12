@@ -24,7 +24,7 @@
 		"highlight.js": "^11.11.1",
 		"katex": "^0.16.22",
 		"lucide-react": "^0.441.0",
-		"next": "^15.5.15",
+		"next": "^15.5.18",
 		"openai": "^4.87.3",
 		"partial-json": "^0.1.7",
 		"react": "^18",
