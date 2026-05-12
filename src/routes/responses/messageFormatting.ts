@@ -34,7 +34,14 @@ interface ToolCallParam {
  * flush it when we hit anything that ends the assistant turn
  * (function_call_output, user/system message, or end of input).
  */
-type AssistantContent = string | Array<{ type: "text"; text: string }> | null;
+// Assistant content can carry text and (per the pre-rewrite shape and
+// the zod input schema) image parts. OpenAI's strict chat-completions
+// schema does not actually permit image_url in assistant content; we
+// pass it through anyway to match the pre-rewrite behavior, which
+// preferred forwarding malformed input over silently dropping it.
+type AssistantContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
+type AssistantContent = string | AssistantContentPart[] | null;
 
 interface PendingAssistant {
 	content: AssistantContent;
@@ -49,14 +56,14 @@ function flushPendingAssistant(pending: PendingAssistant | null, messages: ChatC
 	if (pending === null) {
 		return null;
 	}
+	// Match the pre-rewrite filter at the bottom of formatInputToMessages:
+	// keep messages where content is ANY string (including ""), or a
+	// non-empty array. Drop only when content is null/missing AND there
+	// are no tool calls.
 	const hasContent =
-		(typeof pending.content === "string" && pending.content.length > 0) ||
-		(Array.isArray(pending.content) && pending.content.length > 0);
+		typeof pending.content === "string" || (Array.isArray(pending.content) && pending.content.length > 0);
 	const hasToolCalls = pending.toolCalls.length > 0;
 	if (!hasContent && !hasToolCalls) {
-		// Nothing to emit. (Empty assistant content with no tool_calls
-		// would be a malformed message — drop silently to match the
-		// pre-rewrite filter behavior.)
 		return null;
 	}
 	const message = {
@@ -122,7 +129,7 @@ function formatAssistantContent(content: MessageContent, log?: Logger): Assistan
 	if (!Array.isArray(content)) {
 		return null;
 	}
-	const parts: Array<{ type: "text"; text: string }> = [];
+	const parts: AssistantContentPart[] = [];
 	for (const part of content) {
 		const partType = part.type as string | undefined;
 		switch (partType) {
@@ -137,12 +144,23 @@ function formatAssistantContent(content: MessageContent, log?: Logger): Assistan
 				// Drop refusals from the assistant content — matches the
 				// pre-rewrite behavior.
 				break;
-			case "input_text": {
-				// Unexpected on an assistant message, but the original
+			case "input_text":
+				// Unexpected on an assistant message, but the pre-rewrite
 				// implementation accepted it. Preserve that.
 				parts.push({ type: "text", text: part.text as string });
 				break;
-			}
+			case "input_image":
+				// The pre-rewrite implementation also mapped input_image
+				// for assistant-role messages even though OpenAI's strict
+				// chat-completions schema rejects image_url on assistant
+				// content. Forward it so behavior is unchanged vs. the
+				// pre-rewrite; the downstream backend can reject if it
+				// must.
+				parts.push({
+					type: "image_url",
+					image_url: { url: part.image_url as string },
+				});
+				break;
 			default:
 				log?.warn({ content_type: partType }, "Unknown content type dropped during assistant message formatting");
 		}
@@ -150,7 +168,7 @@ function formatAssistantContent(content: MessageContent, log?: Logger): Assistan
 	if (parts.length === 0) {
 		return null;
 	}
-	if (parts.length === 1) {
+	if (parts.length === 1 && parts[0].type === "text") {
 		return parts[0].text;
 	}
 	return parts;

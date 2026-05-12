@@ -366,6 +366,57 @@ describe("formatInputToMessages", () => {
 		]);
 	});
 
+	it("preserves an assistant message with empty-string content", () => {
+		// Regression: the pre-rewrite filter at the bottom of
+		// formatInputToMessages accepted any string content via
+		// `typeof message.content === "string"`, including "". Pin
+		// that behavior so the rewrite does not silently drop empty
+		// assistant messages.
+		const result = formatInputToMessages(
+			[
+				{ type: "message" as const, role: "user" as const, content: "hi" },
+				{ type: "message" as const, role: "assistant" as const, content: "" },
+				{ type: "message" as const, role: "user" as const, content: "bye" },
+			],
+			null
+		);
+		expect(result).toEqual([
+			{ role: "user", content: "hi" },
+			{ role: "assistant", content: "" },
+			{ role: "user", content: "bye" },
+		]);
+	});
+
+	it("preserves input_image parts on assistant messages", () => {
+		// Regression: the pre-rewrite implementation was role-agnostic
+		// and mapped input_image → image_url for all roles, including
+		// assistant. The zod input schema permits this combination.
+		// Pin the pass-through behavior; the downstream chat-completions
+		// backend can reject if it must.
+		const result = formatInputToMessages(
+			[
+				{
+					type: "message" as const,
+					role: "assistant" as const,
+					content: [
+						{ type: "input_text" as const, text: "see this" },
+						{ type: "input_image" as const, image_url: "https://example.com/img.png" },
+					],
+				},
+			],
+			null
+		);
+		expect(result).toEqual([
+			{
+				role: "assistant",
+				content: [
+					{ type: "text", text: "see this" },
+					{ type: "image_url", image_url: { url: "https://example.com/img.png" } },
+				],
+			},
+		]);
+	});
+
 	it("maps mcp_call to tool message", () => {
 		const result = formatInputToMessages(
 			[
