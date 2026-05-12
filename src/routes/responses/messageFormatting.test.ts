@@ -122,7 +122,11 @@ describe("formatInputToMessages", () => {
 		expect(result).toEqual([]);
 	});
 
-	it("maps function_call to tool message", () => {
+	it("maps a standalone function_call to an assistant message with tool_calls", () => {
+		// Per OpenAI chat-completions spec, a tool call belongs inside the
+		// emitting assistant message's tool_calls[] array. When the input
+		// item arrives with no preceding assistant message, we synthesize
+		// one with content: null.
 		const result = formatInputToMessages(
 			[
 				{
@@ -136,9 +140,102 @@ describe("formatInputToMessages", () => {
 		);
 		expect(result).toEqual([
 			{
-				role: "tool",
-				content: '{"city":"Paris"}',
-				tool_call_id: "call_123",
+				role: "assistant",
+				content: null,
+				tool_calls: [
+					{
+						id: "call_123",
+						type: "function",
+						function: {
+							name: "get_weather",
+							arguments: '{"city":"Paris"}',
+						},
+					},
+				],
+			},
+		]);
+	});
+
+	it("attaches a function_call to the immediately-preceding assistant message", () => {
+		// Real chained conversations always pair an assistant text turn
+		// with the tool calls that turn produced. Both must end up on a
+		// SINGLE chat-completions assistant message.
+		const result = formatInputToMessages(
+			[
+				{
+					type: "message" as const,
+					role: "assistant" as const,
+					content: "Let me check the weather.",
+				},
+				{
+					type: "function_call" as const,
+					call_id: "call_123",
+					name: "get_weather",
+					arguments: '{"city":"Paris"}',
+				},
+			],
+			null
+		);
+		expect(result).toEqual([
+			{
+				role: "assistant",
+				content: "Let me check the weather.",
+				tool_calls: [
+					{
+						id: "call_123",
+						type: "function",
+						function: {
+							name: "get_weather",
+							arguments: '{"city":"Paris"}',
+						},
+					},
+				],
+			},
+		]);
+	});
+
+	it("aggregates parallel function_calls into a single assistant message", () => {
+		// The model can emit multiple tool calls in parallel within one
+		// turn. All of them belong on the same assistant message's
+		// tool_calls[] array.
+		const result = formatInputToMessages(
+			[
+				{
+					type: "message" as const,
+					role: "assistant" as const,
+					content: "Checking two cities.",
+				},
+				{
+					type: "function_call" as const,
+					call_id: "call_a",
+					name: "get_weather",
+					arguments: '{"city":"Paris"}',
+				},
+				{
+					type: "function_call" as const,
+					call_id: "call_b",
+					name: "get_weather",
+					arguments: '{"city":"Berlin"}',
+				},
+			],
+			null
+		);
+		expect(result).toEqual([
+			{
+				role: "assistant",
+				content: "Checking two cities.",
+				tool_calls: [
+					{
+						id: "call_a",
+						type: "function",
+						function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+					},
+					{
+						id: "call_b",
+						type: "function",
+						function: { name: "get_weather", arguments: '{"city":"Berlin"}' },
+					},
+				],
 			},
 		]);
 	});
@@ -160,6 +257,112 @@ describe("formatInputToMessages", () => {
 				content: "Sunny, 25C",
 				tool_call_id: "call_123",
 			},
+		]);
+	});
+
+	it("emits a full chained tool round in the correct order", () => {
+		// The smoking-gun shape from a real chained conversation:
+		//   user -> assistant text -> function_call -> function_call_output -> assistant text
+		// The whole assistant-text + function_call portion must collapse
+		// into a single assistant message that precedes the tool result.
+		const result = formatInputToMessages(
+			[
+				{ type: "message" as const, role: "user" as const, content: "What's the weather in Paris?" },
+				{
+					type: "message" as const,
+					role: "assistant" as const,
+					content: "Let me check.",
+				},
+				{
+					type: "function_call" as const,
+					call_id: "call_123",
+					name: "get_weather",
+					arguments: '{"city":"Paris"}',
+				},
+				{
+					type: "function_call_output" as const,
+					call_id: "call_123",
+					output: "Sunny, 25C",
+				},
+				{
+					type: "message" as const,
+					role: "assistant" as const,
+					content: "It's sunny and 25C in Paris.",
+				},
+			],
+			null
+		);
+		expect(result).toEqual([
+			{ role: "user", content: "What's the weather in Paris?" },
+			{
+				role: "assistant",
+				content: "Let me check.",
+				tool_calls: [
+					{
+						id: "call_123",
+						type: "function",
+						function: { name: "get_weather", arguments: '{"city":"Paris"}' },
+					},
+				],
+			},
+			{ role: "tool", content: "Sunny, 25C", tool_call_id: "call_123" },
+			{ role: "assistant", content: "It's sunny and 25C in Paris." },
+		]);
+	});
+
+	it("synthesizes an assistant message when function_call has no preceding assistant text", () => {
+		// First-turn case: the user asked something, the assistant
+		// jumped straight to a tool call without emitting visible text.
+		const result = formatInputToMessages(
+			[
+				{ type: "message" as const, role: "user" as const, content: "ping" },
+				{
+					type: "function_call" as const,
+					call_id: "call_1",
+					name: "ping_server",
+					arguments: "{}",
+				},
+				{
+					type: "function_call_output" as const,
+					call_id: "call_1",
+					output: "pong",
+				},
+			],
+			null
+		);
+		expect(result).toEqual([
+			{ role: "user", content: "ping" },
+			{
+				role: "assistant",
+				content: null,
+				tool_calls: [
+					{
+						id: "call_1",
+						type: "function",
+						function: { name: "ping_server", arguments: "{}" },
+					},
+				],
+			},
+			{ role: "tool", content: "pong", tool_call_id: "call_1" },
+		]);
+	});
+
+	it("flushes a pending assistant before a new user message", () => {
+		// If an assistant message arrives but no function_call or
+		// function_call_output follows before a new user turn, the
+		// assistant message must still be emitted.
+		const result = formatInputToMessages(
+			[
+				{ type: "message" as const, role: "user" as const, content: "hello" },
+				{ type: "message" as const, role: "assistant" as const, content: "hi" },
+				{ type: "message" as const, role: "user" as const, content: "bye" },
+			],
+			null
+		);
+		expect(result).toEqual([
+			{ role: "user", content: "hello" },
+			{ role: "assistant", content: "hi" },
+			{ role: "user", content: "bye" },
 		]);
 	});
 
