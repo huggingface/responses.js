@@ -18,12 +18,13 @@
 			"flatted": ">=3.4.2",
 			"picomatch": ">=4.0.4",
 			"yaml": ">=2.8.3",
-			"brace-expansion": ">=5.0.5",
+			"brace-expansion": ">=5.0.6",
 			"path-to-regexp": ">=8.4.0",
 			"express>path-to-regexp": "0.1.13",
 			"vite": ">=7.3.2",
 			"postcss": ">=8.5.10",
-			"ip-address": ">=10.1.1"
+			"ip-address": ">=10.1.1",
+			"ws": ">=8.20.1"
 		}
 	},
 	"type": "module",
