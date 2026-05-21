@@ -1,7 +1,7 @@
 {
 	"name": "@huggingface/responses.js",
 	"packageManager": "pnpm@10.10.0",
-	"version": "0.1.0",
+	"version": "1.0.0",
 	"pnpm": {
 		"overrides": {
 			"body-parser": ">=2.2.2",
