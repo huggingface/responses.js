@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/Aleph-Alpha/responses.js/compare/v1.0.0...v1.0.1) (2026-05-21)
+
+
+### Bug Fixes
+
+* small fixes ([ee107ad](https://github.com/Aleph-Alpha/responses.js/commit/ee107ad6f10bb97c546e427bd82f12ac22a0b589))
+* unpin release ([4805fe9](https://github.com/Aleph-Alpha/responses.js/commit/4805fe9989737289a7e6c899d2d210322704e500))
+
 ## [1.0.0](https://github.com/Aleph-Alpha/responses.js/compare/v1.0.0...v1.0.0) (2026-05-21)
 
 
