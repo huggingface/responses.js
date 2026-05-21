@@ -1,0 +1,28 @@
+name: Conventional Commits
+
+# Checks PR titles on pull requests and commit messages on push to main.
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited, reopened, ready_for_review]
+  push:
+    branches: [main]
+
+concurrency:
+  group: conventional-commits-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  conventional-commits:
+    name: Conventional Commits Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Check conventional commits
+        uses: ./.github/actions/conventional-commits

@@ -1,4 +1,4 @@
-name: Release Please
+name: release-please
 
 on:
   push:
@@ -8,12 +8,14 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.1.3
+      - name: Release Please
+        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.1.3
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json

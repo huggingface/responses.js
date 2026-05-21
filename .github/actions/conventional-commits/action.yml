@@ -1,0 +1,79 @@
+name: "Conventional Commits Check"
+description: "Validates PR titles and commit messages follow conventional commits format"
+inputs:
+  github-token:
+    description: "GitHub token for API access"
+    required: false
+    default: ${{ github.token }}
+  check-pr-title:
+    description: "Whether to check PR title (default: true)"
+    required: false
+    default: "true"
+  check-commit-messages:
+    description: "Whether to check commit messages (default: true)"
+    required: false
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Check conventional commits
+      shell: bash
+      env:
+        PR_TITLE: ${{ github.event.pull_request.title }}
+      run: |
+        # Check PR title if this is a PR and enabled
+        EVENT="${{ github.event_name }}"
+        if [ "$EVENT" == "pull_request" ] || [ "$EVENT" == "pull_request_target" ]; then
+          if [ "${{ inputs.check-pr-title }}" == "true" ]; then
+            echo "Checking PR title: $PR_TITLE"
+
+            if echo "$PR_TITLE" \
+                | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?\!?:\s.+" \
+            ; then
+              echo "✅ PR title follows conventional commits format"
+            else
+              echo "❌ PR title does not follow conventional commits format"
+              echo "Expected format: type(scope): description"
+              echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+              echo "Examples:"
+              echo "  feat: add new user authentication"
+              echo "  fix(api): resolve login endpoint issue"
+              echo "  docs: update README installation steps"
+              exit 1
+            fi
+          fi
+        fi
+
+        # Check commit messages for pushes to main and enabled
+        if [ "${{ github.event_name }}" == "push" ] \
+            && [ "${{ github.ref }}" == "refs/heads/main" ] \
+            && [ "${{ inputs.check-commit-messages }}" == "true" ]; then
+          echo "Checking recent commit messages..."
+
+          COMMITS=$(git log --format="%H %s" ${{ github.event.before }}..${{ github.event.after }})
+
+          if [ -z "$COMMITS" ]; then
+            echo "No commits found in this push"
+            exit 0
+          fi
+
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              COMMIT_MSG=$(echo "$line" | cut -d' ' -f2-)
+              echo "Checking commit: $COMMIT_MSG"
+
+              if echo "$COMMIT_MSG" \
+                  | grep -qE "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?\!?:\s.+" \
+              ; then
+                echo "✅ Commit follows conventional commits format"
+              else
+                echo "❌ Commit does not follow conventional commits format: $COMMIT_MSG"
+                echo "Expected format: type(scope): description"
+                echo "Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
+                exit 1
+              fi
+            fi
+          done <<< "$COMMITS"
+        fi
+
+        echo "All checks passed! 🎉"

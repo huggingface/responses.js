@@ -39,7 +39,7 @@ Append `!` after the type/scope (e.g. `feat!:`, `fix(api)!:`) or include `BREAKI
 
 ## Pull requests
 
-This repository uses **squash merge**, so the PR title becomes the commit on `main`. The PR title MUST follow the Conventional Commits format — a CI check (`PR Title`) enforces this and will block merges otherwise.
+This repository uses **squash merge**, so the PR title becomes the commit on `main`. The PR title MUST follow the Conventional Commits format — a CI check (`Conventional Commits`) enforces this and will block merges otherwise.
 
 Individual commits on your feature branch don't need to follow the convention (they get squashed away), but doing so helps reviewers and lets the local `commit-msg` hook catch typos early.
 
