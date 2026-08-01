@@ -778,6 +778,18 @@ describe("responses.js", function () {
 		assert.equal(output[1].content[0].type, "output_text");
 		assert.equal(typeof output[1].content[0].text, "string");
 	});
+
+	it("unauthenticated request gets a 401 and does not crash the server", async function () {
+		const response = await fetch("http://localhost:3000/v1/responses", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ model: "Qwen/Qwen2.5-VL-7B-Instruct", input: "hi" }),
+		});
+		assert.equal(response.status, 401);
+
+		const health = await fetch("http://localhost:3000/health");
+		assert.equal(health.status, 200);
+	});
 });
 
 function dropConsecutiveEvents(events) {
