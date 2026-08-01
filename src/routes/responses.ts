@@ -90,6 +90,7 @@ export const postCreateResponse = async (
 				if (event.type === "response.completed" || event.type === "response.failed") {
 					console.debug(event.type);
 					res.json(event.response);
+					break;
 				}
 			}
 		}
@@ -98,13 +99,22 @@ export const postCreateResponse = async (
 		if (!res.headersSent) {
 			res.status(500).json({
 				success: false,
-				error: error instanceof Error ? error.message : "Internal server error",
+				error: errorMessage(error, "Internal server error"),
 			});
 		} else {
 			res.end();
 		}
 	}
 };
+
+function errorMessage(error: unknown, fallback: string): string {
+	return typeof error === "object" &&
+		error &&
+		"message" in error &&
+		typeof (error as { message: unknown }).message === "string"
+		? (error as { message: string }).message
+		: fallback;
+}
 
 /*
  * Top-level stream.
@@ -167,18 +177,10 @@ async function* runCreateResponseStream(
 		// Error event => stop
 		console.error("Error in stream:", error);
 
-		const message =
-			typeof error === "object" &&
-			error &&
-			"message" in error &&
-			typeof (error as { message: unknown }).message === "string"
-				? (error as { message: string }).message
-				: "An error occurred in stream";
-
 		responseObject.status = "failed";
 		responseObject.error = {
 			code: "server_error",
-			message,
+			message: errorMessage(error, "An error occurred in stream"),
 		};
 		yield {
 			type: "response.failed",
@@ -202,7 +204,7 @@ async function* innerRunStream(
 	apiKey: string,
 	responseObject: IncompleteResponse
 ): AsyncGenerator<PatchedResponseStreamEvent> {
-	// Forward headers (except authorization handled separately)
+	// Forward headers (the exclusion set covers authorization)
 	const defaultHeaders = Object.fromEntries(
 		Object.entries(req.headers).filter(([key]) => !NOT_FORWARDED_HEADERS.has(key.toLowerCase()))
 	) as Record<string, string>;
@@ -534,7 +536,7 @@ async function* listMcpToolsStream(
  * Call LLM and stream the response.
  */
 async function* handleOneTurnStream(
-	apiKey: string | undefined,
+	apiKey: string,
 	payload: ChatCompletionCreateParamsStreaming,
 	responseObject: IncompleteResponse,
 	mcpToolsMapping: Record<string, McpServerParams>,
