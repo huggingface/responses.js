@@ -1,0 +1,8 @@
+# Override applied ON TOP of env/prod.yaml while this app runs on the
+# hub-utils-prod-us-east-1 cluster: only the ALB identity changes. Once the
+# migration is over, fold these keys into env/prod.yaml and delete this file.
+ingress:
+  annotations:
+    alb.ingress.kubernetes.io/load-balancer-name: "hub-utils-int-prod-cloudfront"
+    alb.ingress.kubernetes.io/group.name: "hub-utils-int-prod-cloudfront"
+    alb.ingress.kubernetes.io/tags: "Env=prod,Project=hub-utils,Terraform=true"
