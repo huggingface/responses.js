@@ -9,6 +9,9 @@ spec:
     matchLabels: {{ include "labels.standard" . | nindent 6 }}
   policyTypes:
     {{- if .Values.networkPolicy.ingress.enabled }}
+    {{- if not .Values.networkPolicy.ingress.allowedBlocks }}
+    {{- fail "networkPolicy.ingress.enabled needs networkPolicy.ingress.allowedBlocks: a rule with no peers under `from` matches every source, so an empty list would open the port instead of restricting it" }}
+    {{- end }}
     - Ingress
     {{- end }}
     - Egress
