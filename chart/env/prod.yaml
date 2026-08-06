@@ -23,6 +23,9 @@ ingress:
     alb.ingress.kubernetes.io/target-type: "ip"
     kubernetes.io/ingress.class: "alb"
 
+networkPolicy:
+  enabled: true
+
 autoscaling:
   enabled: true
   minReplicas: 2

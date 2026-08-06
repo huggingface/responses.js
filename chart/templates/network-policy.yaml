@@ -1,0 +1,63 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "name" . }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels: {{ include "labels.standard" . | nindent 6 }}
+  policyTypes:
+    {{- if .Values.networkPolicy.ingress.enabled }}
+    - Ingress
+    {{- end }}
+    - Egress
+  {{- if .Values.networkPolicy.ingress.enabled }}
+  ingress:
+    ## Load balancer ENIs only, on the container port: application traffic and
+    ## health checks both come from there.
+    - from:
+        {{- range $cidr := .Values.networkPolicy.ingress.allowedBlocks }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
+        {{- end }}
+      ports:
+        - port: {{ .Values.networkPolicy.appPort }}
+          protocol: TCP
+  {{- end }}
+  egress:
+    ## Cluster DNS. TCP/53 is needed for answers that do not fit in 512 bytes,
+    ## and the link-local address is where node-local-dns listens.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        - ipBlock:
+            cidr: 169.254.169.42/32
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    ## Public egress only: the upstream router and the MCP servers this app
+    ## connects to are reached over the internet. No private range is allowed,
+    ## so a caller-supplied MCP server_url cannot be turned into a request to
+    ## anything internal. The link-local range covers the instance metadata
+    ## endpoint.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP
+{{- end }}

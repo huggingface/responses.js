@@ -16,6 +16,17 @@ ingress:
 
 env: {}
 
+networkPolicy:
+  enabled: false
+  ## Container port the load balancer targets; used by the ingress rule.
+  appPort: 3000
+  ## Restricting ingress is opt-in: with the wrong allowedBlocks it black-holes
+  ## traffic. The blocks are the load balancer's own ranges and are supplied by
+  ## the deployment layer, never set here.
+  ingress:
+    enabled: false
+    allowedBlocks: []
+
 resources: {}
 nodeSelector: {}
 tolerations: []
