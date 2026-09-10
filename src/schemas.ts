@@ -113,6 +113,13 @@ export const createResponseParamsSchema = z.object({
 					),
 				}),
 				z.object({
+					type: z.literal("reasoning"),
+					id: z.string().optional(),
+					status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
+					content: z.array(z.object({ type: z.literal("reasoning_text"), text: z.string() })),
+					summary: z.array(z.object({ type: z.literal("summary_text"), text: z.string() })).optional(),
+				}),
+				z.object({
 					type: z.literal("function_call"),
 					id: z.string().optional(),
 					call_id: z.string(),
