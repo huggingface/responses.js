@@ -21,12 +21,18 @@ export function convertInputToMessages(
 		const convertedMessages = input
 			.map((item) => {
 				switch (item.type) {
-					case "reasoning":
-						return {
-							role: "assistant" as const,
-							content: [],
-							reasoning_content: item.content.map((part) => part.text).join(""),
-						};
+					case "reasoning": {
+						// Prefer the verbatim reasoning, fall back to the summary when that is all the client replays.
+						const parts = item.content?.length ? item.content : (item.summary ?? []);
+						const reasoningContent = parts.map((part) => part.text).join("");
+						return reasoningContent
+							? {
+									role: "assistant" as const,
+									content: [],
+									reasoning_content: reasoningContent,
+								}
+							: undefined;
+					}
 					case "function_call":
 						return {
 							role: "assistant" as const,

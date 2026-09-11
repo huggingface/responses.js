@@ -116,8 +116,16 @@ export const createResponseParamsSchema = z.object({
 					type: z.literal("reasoning"),
 					id: z.string().optional(),
 					status: z.enum(["in_progress", "completed", "incomplete"]).optional(),
-					content: z.array(z.object({ type: z.literal("reasoning_text"), text: z.string() })),
-					summary: z.array(z.object({ type: z.literal("summary_text"), text: z.string() })).optional(),
+					// Both are optional: the Responses API returns `content` for verbatim reasoning and
+					// `summary` when the reasoning is summarized. Clients replay whichever they received.
+					content: z
+						.array(z.object({ type: z.literal("reasoning_text"), text: z.string() }))
+						.optional()
+						.default([]),
+					summary: z
+						.array(z.object({ type: z.literal("summary_text"), text: z.string() }))
+						.optional()
+						.default([]),
 				}),
 				z.object({
 					type: z.literal("function_call"),
