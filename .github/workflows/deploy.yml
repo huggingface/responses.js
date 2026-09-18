@@ -2,8 +2,12 @@ name: Deploy to k8s
 on:
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build-and-publish:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -45,6 +49,7 @@ jobs:
           provenance: false
 
   deploy:
+    permissions: {}
     name: Deploy on prod
     runs-on: ubuntu-latest
     needs: ["build-and-publish"]
