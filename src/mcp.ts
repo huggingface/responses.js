@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { version as packageVersion } from "../package.json";
-import { assertSafeMcpUrl, mcpSafeFetch } from "./urlSafety";
+import { mcpSafeFetch } from "./urlSafety";
 
 import type { McpServerParams } from "./schemas";
 import { McpResultFormatter } from "./lib/McpResultFormatter";
@@ -10,9 +10,9 @@ import { McpResultFormatter } from "./lib/McpResultFormatter";
 export async function connectMcpServer(mcpServer: McpServerParams): Promise<Client> {
 	const mcp = new Client({ name: "@huggingface/responses.js", version: packageVersion });
 
-	// The URL and the headers both come from the request body, so validate the target before the
-	// headers are sent to it. `mcpSafeFetch` re-checks every hop, including after a redirect.
-	const url = assertSafeMcpUrl(mcpServer.server_url);
+	// `server_url` is validated by the request schema; `mcpSafeFetch` re-checks the target of every
+	// request it makes, which also covers the endpoint URL the SSE transport is handed by the server.
+	const url = new URL(mcpServer.server_url);
 	const options = {
 		fetch: mcpSafeFetch,
 		requestInit: mcpServer.headers

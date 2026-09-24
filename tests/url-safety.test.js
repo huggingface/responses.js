@@ -1,5 +1,7 @@
 import { strict as assert } from "assert";
-import { assertSafeMcpUrl, isUnsafeIp, mcpSafeFetch } from "../dist/urlSafety.js";
+import { createServer } from "http";
+import { fetch as undiciFetch } from "undici";
+import { assertSafeMcpUrl, isUnsafeIp, mcpSafeFetch, ssrfSafeAgent } from "../dist/urlSafety.js";
 
 describe("MCP server URL validation", function () {
 	describe("isUnsafeIp", function () {
@@ -16,6 +18,7 @@ describe("MCP server URL validation", function () {
 			"::1",
 			"::",
 			"::ffff:127.0.0.1",
+			"::ffff:7f00:1", // canonical form of ::ffff:127.0.0.1, which URL parsing produces
 			"::ffff:10.0.0.1",
 			"fc00::1",
 			"fd12:3456::1",
@@ -37,76 +40,86 @@ describe("MCP server URL validation", function () {
 	});
 
 	describe("assertSafeMcpUrl", function () {
-		it("accepts a public https URL", function () {
+		it("accepts a public https URL and returns it parsed", function () {
 			const url = assertSafeMcpUrl("https://mcp.example.com/sse");
 			assert.equal(url.hostname, "mcp.example.com");
 		});
 
-		it("accepts a public http URL", function () {
-			assert.equal(assertSafeMcpUrl("http://mcp.example.com/mcp").protocol, "http:");
+		it("accepts a hostname that has not been resolved yet", function () {
+			assert.doesNotThrow(() => assertSafeMcpUrl("https://localhost.example.com/"));
 		});
 
-		it("accepts a public IP literal", function () {
-			assert.equal(assertSafeMcpUrl("https://1.1.1.1/mcp").hostname, "1.1.1.1");
-		});
-
-		it("rejects loopback", function () {
-			assert.throws(() => assertSafeMcpUrl("http://127.0.0.1:8000/mcp"), /non-routable/);
-		});
-
-		it("rejects the link-local metadata address", function () {
-			assert.throws(() => assertSafeMcpUrl("http://169.254.169.254/latest/meta-data/"), /non-routable/);
-		});
-
-		it("rejects a private RFC1918 address", function () {
-			assert.throws(() => assertSafeMcpUrl("http://192.168.1.1/mcp"), /non-routable/);
-		});
-
-		it("rejects 10.0.0.0/8", function () {
-			assert.throws(() => assertSafeMcpUrl("http://10.1.2.3/mcp"), /non-routable/);
-		});
-
-		it("rejects an IPv4-mapped IPv6 loopback literal", function () {
-			assert.throws(() => assertSafeMcpUrl("http://[::ffff:127.0.0.1]/mcp"), /non-routable/);
-		});
-
-		it("rejects the unspecified IPv6 address", function () {
-			assert.throws(() => assertSafeMcpUrl("http://[::]:8000/mcp"), /non-routable/);
-		});
-
-		it("rejects an IPv6 loopback literal", function () {
-			assert.throws(() => assertSafeMcpUrl("http://[::1]:8000/mcp"), /non-routable/);
-		});
-
-		it("rejects a non-http scheme", function () {
-			assert.throws(() => assertSafeMcpUrl("file:///etc/passwd"), /Unsupported MCP server URL scheme/);
-		});
-
-		it("rejects gopher:", function () {
-			assert.throws(() => assertSafeMcpUrl("gopher://example.com/"), /Unsupported MCP server URL scheme/);
-		});
-
-		it("rejects a string that is not a URL", function () {
-			assert.throws(() => assertSafeMcpUrl("mcp.example.com"), /Invalid MCP server URL/);
-		});
+		// [url, expected message fragment]
+		const rejected = [
+			["http://127.0.0.1:8080/", "non-routable"],
+			["http://169.254.169.254/latest/meta-data/", "non-routable"],
+			["http://192.168.1.1/", "non-routable"],
+			["http://10.1.2.3/", "non-routable"],
+			["http://[::ffff:127.0.0.1]/", "non-routable"],
+			["http://[::1]/", "non-routable"],
+			["http://[::]/", "non-routable"],
+			["file:///etc/passwd", "scheme"],
+			["ftp://example.com/", "scheme"],
+			["gopher://example.com/", "scheme"],
+			["not a url", "Invalid MCP server URL"],
+		];
+		for (const [url, fragment] of rejected) {
+			it(`rejects ${url}`, function () {
+				assert.throws(() => assertSafeMcpUrl(url), new RegExp(fragment));
+			});
+		}
 	});
 
 	describe("mcpSafeFetch", function () {
-		it("refuses a loopback target before opening a socket", async function () {
-			await assert.rejects(mcpSafeFetch("http://127.0.0.1:8000/mcp"), /non-routable/);
+		it("rejects a non-routable target before opening a socket", async function () {
+			await assert.rejects(() => mcpSafeFetch("http://169.254.169.254/"), /non-routable/);
 		});
 
-		it("refuses the link-local metadata address", async function () {
-			await assert.rejects(mcpSafeFetch("http://169.254.169.254/latest/meta-data/"), /non-routable/);
-		});
+		// undici wraps a connector failure as `TypeError: fetch failed`; the reason is on `.cause`.
+		const rejectionReason = async (fn) => {
+			try {
+				await fn();
+			} catch (error) {
+				return String(error.cause?.message ?? error.message);
+			}
+			throw new Error("expected the request to be rejected");
+		};
 
-		// The name is only checked once it is resolved, so a name that points at an internal address
-		// is stopped at connection time. undici reports it as a `fetch failed` wrapping our error.
-		it("refuses a hostname that resolves to loopback", async function () {
-			await assert.rejects(mcpSafeFetch("http://localhost:8000/mcp"), (error) => {
-				assert.match(error.cause.message, /localhost resolves to a non-routable address/);
-				return true;
+		it("rejects a hostname that resolves to a non-routable address", async function () {
+			const server = createServer((req, res) => {
+				res.writeHead(200);
+				res.end("ok");
 			});
+			await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+			const { port } = server.address();
+			try {
+				// `localhost` passes the URL check, which only inspects IP literals. The resolved
+				// address is what must be caught, and only the lookup hook sees it.
+				const reason = await rejectionReason(() => mcpSafeFetch(`http://localhost:${port}/`));
+				assert.match(reason, /non-routable/);
+			} finally {
+				server.close();
+			}
+		});
+
+		// A redirect target is never seen by `assertSafeMcpUrl`, and an IP literal is never seen by
+		// the lookup hook. The connect wrapper is the only thing covering that combination, so it is
+		// exercised directly here rather than through a redirect the URL check would catch first.
+		it("rejects a non-routable literal at connection time, bypassing the URL check", async function () {
+			const server = createServer((req, res) => {
+				res.writeHead(200);
+				res.end("ok");
+			});
+			await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+			const { port } = server.address();
+			try {
+				const reason = await rejectionReason(() =>
+					undiciFetch(`http://127.0.0.1:${port}/`, { dispatcher: ssrfSafeAgent })
+				);
+				assert.match(reason, /non-routable/);
+			} finally {
+				server.close();
+			}
 		});
 	});
 });

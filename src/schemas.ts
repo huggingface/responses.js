@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertSafeMcpUrl } from "./urlSafety";
 
 /**
  * https://platform.openai.com/docs/api-reference/responses/create
@@ -28,7 +29,22 @@ const inputContentSchema = z.array(
 
 const mcpServerParamsSchema = z.object({
 	server_label: z.string(),
-	server_url: z.string().url(),
+	server_url: z
+		.string()
+		.url()
+		// Validated here, at the boundary, so a bad target is a 400 from the request parser rather
+		// than a failure halfway through an already-streaming response.
+		.refine(
+			(value) => {
+				try {
+					assertSafeMcpUrl(value);
+					return true;
+				} catch {
+					return false;
+				}
+			},
+			{ message: "server_url must be an http(s) URL that does not point at a non-routable address" }
+		),
 	type: z.literal("mcp"),
 	allowed_tools: z
 		.union([
