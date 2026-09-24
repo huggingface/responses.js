@@ -28,7 +28,7 @@ const inputContentSchema = z.array(
 
 const mcpServerParamsSchema = z.object({
 	server_label: z.string(),
-	server_url: z.string(),
+	server_url: z.string().url(),
 	type: z.literal("mcp"),
 	allowed_tools: z
 		.union([
