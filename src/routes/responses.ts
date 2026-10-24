@@ -22,6 +22,8 @@ import type { ChatCompletionCreateParamsStreaming, ChatCompletionTool } from "op
 import type { FunctionParameters } from "openai/resources/shared.js";
 import { callMcpTool, connectMcpServer } from "../mcp.js";
 
+const HF_ROUTER_URL = "https://router.huggingface.co/v1";
+
 class StreamingError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -49,6 +51,17 @@ const NOT_FORWARDED_HEADERS = new Set([
 	"upgrade",
 ]);
 
+async function isValidHfToken(apiKey: string): Promise<boolean> {
+	try {
+		const response = await fetch("https://huggingface.co/api/whoami-v2", {
+			headers: { Authorization: `Bearer ${apiKey}` },
+		});
+		return response.ok;
+	} catch {
+		return false;
+	}
+}
+
 export const postCreateResponse = async (
 	req: ValidatedRequest<CreateResponseParams>,
 	res: ExpressResponse
@@ -57,6 +70,20 @@ export const postCreateResponse = async (
 	// writing, it is too late to send an error status.
 	const apiKey = req.headers.authorization?.split(" ")[1];
 	if (!apiKey) {
+		res.status(401).json({
+			success: false,
+			error: "Unauthorized",
+		});
+		return;
+	}
+
+	// MCP servers are contacted before the first router call checks the key, so
+	// a request that lists one must carry a valid HF token first.
+	if (
+		req.body.tools?.some((tool) => tool.type === "mcp") &&
+		(process.env.OPENAI_BASE_URL ?? HF_ROUTER_URL) === HF_ROUTER_URL &&
+		!(await isValidHfToken(apiKey))
+	) {
 		res.status(401).json({
 			success: false,
 			error: "Unauthorized",
@@ -431,7 +458,7 @@ async function* handleOneTurnStream(
 	defaultHeaders: Record<string, string>
 ): AsyncGenerator<PatchedResponseStreamEvent> {
 	const client = new OpenAI({
-		baseURL: process.env.OPENAI_BASE_URL ?? "https://router.huggingface.co/v1",
+		baseURL: process.env.OPENAI_BASE_URL ?? HF_ROUTER_URL,
 		apiKey: apiKey,
 		defaultHeaders,
 	});

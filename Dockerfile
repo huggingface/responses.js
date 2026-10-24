@@ -1,5 +1,5 @@
 # ---- Build Stage ----
-FROM node:18-alpine AS builder
+FROM node:24.22.1-alpine AS builder
 
 # Install pnpm as root
 RUN corepack enable && corepack prepare pnpm@10.10.0 --activate
@@ -19,7 +19,7 @@ RUN pnpm run build
 RUN chown -R node:node $HOME/app
 
 # ---- Production Stage ----
-FROM node:18-alpine AS runner
+FROM node:24.22.1-alpine AS runner
 
 # No need to install pnpm here, just switch to node user
 USER node
