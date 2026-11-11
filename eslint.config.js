@@ -23,6 +23,9 @@ export default [
 				console: "readonly",
 				process: "readonly",
 				fetch: "readonly",
+				URL: "readonly",
+				RequestInit: "readonly",
+				Response: "readonly",
 			},
 		},
 		plugins: {

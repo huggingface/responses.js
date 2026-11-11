@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { version as packageVersion } from "../package.json";
-import { URL } from "url";
+import { mcpSafeFetch } from "./urlSafety";
 
 import type { McpServerParams } from "./schemas";
 import { McpResultFormatter } from "./lib/McpResultFormatter";
@@ -10,15 +10,18 @@ import { McpResultFormatter } from "./lib/McpResultFormatter";
 export async function connectMcpServer(mcpServer: McpServerParams): Promise<Client> {
 	const mcp = new Client({ name: "@huggingface/responses.js", version: packageVersion });
 
-	// Try to connect with http first, if that fails, try sse
+	// `server_url` is validated by the request schema; `mcpSafeFetch` re-checks the target of every
+	// request it makes, which also covers the endpoint URL the SSE transport is handed by the server.
 	const url = new URL(mcpServer.server_url);
 	const options = {
+		fetch: mcpSafeFetch,
 		requestInit: mcpServer.headers
 			? {
 					headers: mcpServer.headers,
 				}
 			: undefined,
 	};
+	// Try to connect with http first, if that fails, try sse
 	try {
 		const transport = new StreamableHTTPClientTransport(url, options);
 		await mcp.connect(transport);
