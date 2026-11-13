@@ -6,7 +6,7 @@ import type { CreateResponseParams } from "./schemas.js";
 
 export type ChatMessage =
 	| Exclude<ChatCompletionMessageParam, { role: "assistant" }>
-	| (ChatCompletionAssistantMessageParam & { reasoning_content?: string });
+	| (ChatCompletionAssistantMessageParam & { reasoning_content?: string; reasoning?: string });
 
 /*
  * Convert Responses API input items to Chat Completion messages.
@@ -14,7 +14,8 @@ export type ChatMessage =
  */
 export function convertInputToMessages(
 	input: CreateResponseParams["input"],
-	instructions?: string | null
+	instructions?: string | null,
+	reasoningField: "reasoning_content" | "reasoning" = "reasoning_content"
 ): ChatMessage[] {
 	const messages: ChatMessage[] = instructions ? [{ role: "system", content: instructions }] : [];
 	if (Array.isArray(input)) {
@@ -153,6 +154,10 @@ export function convertInputToMessages(
 		messages.push({ role: "user", content: input } as const);
 	}
 	for (const message of messages) {
+		if (message.role === "assistant" && reasoningField === "reasoning" && "reasoning_content" in message) {
+			message.reasoning = message.reasoning_content;
+			delete message.reasoning_content;
+		}
 		if (!Array.isArray(message.content)) {
 			continue;
 		}

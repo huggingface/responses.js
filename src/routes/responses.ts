@@ -306,7 +306,13 @@ async function* innerRunStream(
 		tools = undefined;
 	}
 
-	const messages = convertInputToMessages(req.body.input, req.body.instructions);
+	// Groq's assistant input schema uses "reasoning" for replayed reasoning text.
+	const reasoningField =
+		(process.env.OPENAI_BASE_URL ?? HF_ROUTER_URL).replace(/\/$/, "") === HF_ROUTER_URL &&
+		req.body.model.endsWith(":groq")
+			? "reasoning"
+			: "reasoning_content";
+	const messages = convertInputToMessages(req.body.input, req.body.instructions, reasoningField);
 
 	// Prepare payload for the LLM
 	const payload: ChatCompletionCreateParamsStreaming = {
